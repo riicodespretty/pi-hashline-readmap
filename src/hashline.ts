@@ -77,14 +77,26 @@ export function computeLineHash(_idx: number, line: string): string {
 	return DICT[xxh32(line) % HASH_MOD];
 }
 
+const DISPLAY_CONTROL_CHAR_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f]/g;
+
+export function escapeControlCharsForDisplay(text: string): string {
+	return text.replace(DISPLAY_CONTROL_CHAR_RE, (ch) => {
+		return `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`;
+	});
+}
+
+export function formatHashlineDisplay(lineNumber: number, content: string): string {
+	return `${lineNumber}:${computeLineHash(lineNumber, content)}|${escapeControlCharsForDisplay(content)}`;
+}
+
 export function hashLine(lineNumber: number, content: string): string {
-	return `${lineNumber}:${computeLineHash(lineNumber, content)}|${content}`;
+	return formatHashlineDisplay(lineNumber, content);
 }
 
 export function hashLines(content: string): string {
 	return content
 		.split("\n")
-		.map((line, i) => hashLine(i + 1, line))
+		.map((line, i) => formatHashlineDisplay(i + 1, line))
 		.join("\n");
 }
 
@@ -140,7 +152,7 @@ function findSimilarLines(
 	candidates.sort((a, b) => b.score - a.score);
 	return candidates.slice(0, maxSuggestions).map((c) => {
 		const hash = computeLineHash(c.line, c.content);
-		return `  ${c.line}:${hash}|${c.content}`;
+		return `  ${c.line}:${hash}|${escapeControlCharsForDisplay(c.content)}`;
 	});
 }
 function formatMismatchError(mismatches: HashMismatch[], fileLines: string[]): string {
@@ -167,7 +179,11 @@ function formatMismatchError(mismatches: HashMismatch[], fileLines: string[]): s
 		const content = fileLines[num - 1];
 		const hash = computeLineHash(num, content);
 		const prefix = `${num}:${hash}`;
-		out.push(mismatchSet.has(num) ? `>>> ${prefix}|${content}` : `    ${prefix}|${content}`);
+		out.push(
+			mismatchSet.has(num)
+				? `>>> ${prefix}|${escapeControlCharsForDisplay(content)}`
+				: `    ${prefix}|${escapeControlCharsForDisplay(content)}`,
+		);
 	}
 
 	const withContent = mismatches.filter((m) => m.expectedContent !== undefined);

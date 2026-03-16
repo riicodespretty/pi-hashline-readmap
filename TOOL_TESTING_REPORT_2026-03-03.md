@@ -4,6 +4,12 @@ Date: 2026-03-03
 
 This session focused on *actual tool testing* (read/grep/sg/edit + RTK bash filter behavior), first validating recent work and then pushing edges to find gaps.
 
+> Audit note (2026-03-16): this report is historically accurate for the 2026-03-03 session, but several findings have since been fixed. Current status now differs:
+> - `npm run typecheck` currently passes
+> - transfer/build compressor issues reported here were later fixed and archived
+> - binary detection / bare-CR / strip-types probing issues reported here were later fixed and archived
+> - the remaining known unresolved follow-up from later testing is issue #052 (raw control characters in read/grep/sg output)
+
 ## What was tested
 
 ### Repo health checks

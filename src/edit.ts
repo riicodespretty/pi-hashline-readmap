@@ -4,7 +4,7 @@ import type { Static } from "@sinclair/typebox";
 import { readFileSync } from "fs";
 import { readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
 import { detectLineEnding, generateCompactOrFullDiff, normalizeToLF, replaceText, restoreLineEndings, stripBom } from "./edit-diff";
-import { applyHashlineEdits, computeLineHash, ensureHashInit, parseLineRef, type HashlineEditItem } from "./hashline";
+import { applyHashlineEdits, computeLineHash, ensureHashInit, parseLineRef, type HashlineEditItem, escapeControlCharsForDisplay } from "./hashline";
 import { resolveToCwd } from "./path-utils";
 import { throwIfAborted } from "./runtime";
 
@@ -184,7 +184,7 @@ export function registerEditTool(pi: ExtensionAPI): void {
 						anchorResult.noopEdits
 							.map(
 								(e) =>
-									`Edit ${e.editIndex}: replacement for ${e.loc} is identical to current content:\n  ${e.loc}| ${e.currentContent}`,
+									`Edit ${e.editIndex}: replacement for ${e.loc} is identical to current content:\n  ${e.loc}| ${escapeControlCharsForDisplay(e.currentContent)}`,
 							)
 							.join("\n");
 					diagnostic += "\nRe-read the file to see the current state.";
@@ -204,7 +204,7 @@ export function registerEditTool(pi: ExtensionAPI): void {
 								if (parsed.line >= 1 && parsed.line <= lines.length) {
 									const lineContent = lines[parsed.line - 1];
 									const hash = computeLineHash(parsed.line, lineContent);
-									targetLines.push(`${parsed.line}:${hash}|${lineContent}`);
+									targetLines.push(`${parsed.line}:${hash}|${escapeControlCharsForDisplay(lineContent)}`);
 								}
 							} catch {
 								/* skip malformed refs */

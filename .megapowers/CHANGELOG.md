@@ -157,29 +157,32 @@ PR created: https://github.com/coctostan/pi-hashline-readmap/pull/8
 
 ### Action 4: close-issue
 
-All wrap-up actions are complete. Here's the full summary:
+Historical wrap-up note from the original #039 work session:
 
 ---
 
-## ✅ Wrap-up Complete — Issue #039
+## Partial wrap-up note — Issue #039
 
-### Actions Executed
+The original implementation session shipped these completed pieces of #039:
+- `read` tool: `map: true` parameter appends structural map for any file on demand
+- `grep` tool: `summary: true` parameter for per-file match counts; truncation indicator at result limit
+- `prompts/sg.md`: expanded examples + Tips & Common Pitfalls section
+- `prompts/read.md`: expanded symbol examples
 
-| Action | Status | Details |
-|--------|--------|---------|
-| **write-changelog** | ✅ Done | 5 entries appended to `.megapowers/CHANGELOG.md` under `## [Unreleased] → ### Added` |
-| **capture-learnings** | ✅ Done | 7 learnings saved to `.megapowers/plans/039-read-grep-sg-agent-ux-enhancements/learnings.md` |
-| **push-and-pr** | ✅ Done | Branch pushed; PR #8 created: https://github.com/coctostan/pi-hashline-readmap/pull/8 |
-| **close-issue** | ✅ Reporting now | |
+Post-audit correction (2026-03-16): issue #039 was **not fully completed**. The following scope remains open in `.megapowers/issues/039-read-grep-sg-agent-ux-enhancements.md`:
+- multi-file read support
+- directory listing mode for `read`
 
-### What Shipped
+The original PR/branch history is still valid historical context, but #039 should remain open until those remaining read-tool UX items are implemented.
 
-- **`read` tool**: `map: true` parameter appends structural map for any file on demand
-- **`grep` tool**: `summary: true` parameter for per-file match counts; truncation indicator at result limit
-- **`prompts/sg.md`**: 7 new patterns + 7-entry Tips & Common Pitfalls section
-- **`prompts/read.md`**: Map Parameter section + 4 new symbol type examples
-- **Code review fixes**: duplicate block consolidation, comment fix, markdown spacing, new combination test
-- **300 tests pass**, 0 failures
+## Issue #052: Escape control characters in hashlined tool output — CLOSED ✅
+**Date**: 2026-03-16
 
-**Issue 039 is ready to close.** Run `/issue close` to finalize, or select a new issue to continue.
-Done. Main is fast-forwarded to `978f645` (the merge commit), feature branch deleted. All 21 files from both #039 and #040 are now on local `main`, matching `origin/main`. You're ready to pick the next issue.
+### Fixed
+- Escaped raw ASCII control characters in `read`, `grep`, and `sg` hashlined output so copied tool output no longer breaks downstream JSON tool calls (#052)
+- Preserved anchor stability by keeping hash computation on raw line text and applying escaping only in display formatting (#052)
+- Escaped related control-character previews in hashline mismatch diagnostics and edit no-op diagnostics (#052)
+
+### Tests
+- Added regression coverage for `read`/`grep`, `sg`, `hashLines()`, `hashLine()`, mismatch diagnostics, and edit diagnostics
+- Verified with `npm test` → 71 passing files / 388 passing tests

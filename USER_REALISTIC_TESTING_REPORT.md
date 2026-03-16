@@ -3,6 +3,7 @@
 > Session intent: integration + UX testing (no fixes).  
 > Repo: `pi-hashline-readmap`
 
+> Audit note (2026-03-16): this report is historically accurate for that test session, but some failures it documents were later fixed. In particular, the typecheck failure, transfer-compressor issues, binary-detection gap, bare-CR grep issue, and strip-types probing issue were addressed afterward. The main still-open follow-up from subsequent testing is issue #052 (raw control characters in read/grep/sg output).
 ## Environment
 
 Commands:

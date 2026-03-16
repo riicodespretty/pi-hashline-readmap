@@ -93,7 +93,7 @@ brew install shellcheck yq scc # linting/analysis utilities
 ### Running tests
 
 ```bash
-npm test             # vitest run (39 tests)
+npm test             # vitest run
 npm run typecheck    # tsc --noEmit
 ```
 
@@ -135,7 +135,7 @@ prompts/
   read.md             # read tool schema description
   edit.md             # edit tool schema description
   sg.md               # sg tool schema description
-tests/                # 39 test files — one per feature area
+tests/                # test files — one per feature area
 ```
 
 ### Adding a new language mapper

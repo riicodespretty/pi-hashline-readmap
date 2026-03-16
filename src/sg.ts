@@ -5,7 +5,7 @@ import path from "node:path";
 import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { normalizeToLF, stripBom } from "./edit-diff.js";
-import { computeLineHash, ensureHashInit } from "./hashline.js";
+import { ensureHashInit, formatHashlineDisplay } from "./hashline.js";
 import { resolveToCwd } from "./path-utils.js";
 
 type SgParams = { pattern: string; lang?: string; path?: string };
@@ -143,7 +143,7 @@ export function registerSgTool(pi: ExtensionAPI): void {
           for (const range of mergedRanges) {
             for (let ln = range.startLine; ln <= range.endLine; ln++) {
               const srcLine = lines[ln - 1] ?? "";
-              blocks.push(`>>${ln}:${computeLineHash(ln, srcLine)}|${srcLine}`);
+              blocks.push(`>>${formatHashlineDisplay(ln, srcLine)}`);
             }
           }
         }

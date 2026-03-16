@@ -153,7 +153,7 @@ PI_RTK_SAVINGS=1 pi
 
 ```bash
 npm install          # install dependencies
-npm test             # run tests (39 test files)
+npm test             # run the test suite
 npm run typecheck    # TypeScript type check
 ```
 
@@ -199,7 +199,7 @@ prompts/
   read.md                   # Read tool description/prompt
   edit.md                   # Edit tool description/prompt
   sg.md                     # AST-grep tool description/prompt
-tests/                      # 39 test files covering all features
+tests/                      # test files covering all features
 ```
 
 ## Credits

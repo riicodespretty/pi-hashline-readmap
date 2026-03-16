@@ -10,7 +10,7 @@ import { Type } from "@sinclair/typebox";
 import { readFileSync } from "fs";
 import { readFile as fsReadFile } from "fs/promises";
 import { normalizeToLF, stripBom, hasBareCarriageReturn } from "./edit-diff";
-import { computeLineHash, ensureHashInit } from "./hashline";
+import { ensureHashInit, formatHashlineDisplay } from "./hashline";
 import { looksLikeBinary } from "./binary-detect";
 import { resolveToCwd } from "./path-utils";
 import { throwIfAborted } from "./runtime";
@@ -166,7 +166,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			const formatted = selected
 				.map((line, i) => {
 					const num = startLine + i;
-					return `${num}:${computeLineHash(num, line)}|${line}`;
+					return formatHashlineDisplay(num, line);
 				})
 				.join("\n");
 

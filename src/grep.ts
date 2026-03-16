@@ -5,7 +5,7 @@ import { readFile as fsReadFile, stat as fsStat } from "fs/promises";
 import path from "path";
 import { normalizeToLF, stripBom, hasBareCarriageReturn } from "./edit-diff";
 import { looksLikeBinary } from "./binary-detect";
-import { computeLineHash, ensureHashInit } from "./hashline";
+import { ensureHashInit, formatHashlineDisplay } from "./hashline";
 import { resolveToCwd } from "./path-utils";
 import { throwIfAborted } from "./runtime";
 
@@ -335,9 +335,8 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 						for (let i = 0; i < fileLines.length; i++) {
 							if (!patternRe.test(fileLines[i])) continue;
 							const lineNum = i + 1;
-							const ref = `${lineNum}:${computeLineHash(lineNum, fileLines[i])}`;
 							const marker = ">>";
-							transformed.push(`${parsed.displayPath}:${marker}${ref}|${fileLines[i]}`);
+							transformed.push(`${parsed.displayPath}:${marker}${formatHashlineDisplay(lineNum, fileLines[i])}`);
 							emitted = true;
 						}
 						if (emitted) continue;
@@ -346,9 +345,8 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 				}
 				// Normal (non-bare-CR) path
 				const sourceLine = fileLines?.[parsed.lineNumber - 1] ?? parsed.text;
-				const ref = `${parsed.lineNumber}:${computeLineHash(parsed.lineNumber, sourceLine)}`;
 				const marker = parsed.kind === "match" ? ">>" : "  ";
-				transformed.push(`${parsed.displayPath}:${marker}${ref}|${parsed.text}`);
+				transformed.push(`${parsed.displayPath}:${marker}${formatHashlineDisplay(parsed.lineNumber, sourceLine)}`);
 			}
 
 			if (parsedCount === 0 && candidateUnparsedCount > 0) {
