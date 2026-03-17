@@ -237,7 +237,28 @@ export function registerEditTool(pi: ExtensionAPI): void {
 				details: {
 					diff: diffResult.diff,
 					firstChangedLine: anchorResult.firstChangedLine ?? diffResult.firstChangedLine,
-				} as EditToolDetails,
+					ptcValue: {
+						tool: "edit",
+						ok: true,
+						path: absolutePath,
+						summary: `Updated ${path}`,
+						diff: diffResult.diff,
+						firstChangedLine: anchorResult.firstChangedLine ?? diffResult.firstChangedLine,
+						warnings,
+						noopEdits: anchorResult.noopEdits ?? [],
+					},
+				} as EditToolDetails & {
+					ptcValue: {
+						tool: string;
+						ok: boolean;
+						path: string;
+						summary: string;
+						diff: string;
+						firstChangedLine: number | undefined;
+						warnings: string[];
+						noopEdits: unknown[];
+					};
+				},
 			};
 		},
 	});

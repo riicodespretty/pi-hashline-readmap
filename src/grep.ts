@@ -6,6 +6,7 @@ import path from "path";
 import { normalizeToLF, stripBom, hasBareCarriageReturn } from "./edit-diff";
 import { looksLikeBinary } from "./binary-detect";
 import { ensureHashInit, formatHashlineDisplay } from "./hashline";
+import { buildPtcLine } from "./ptc-value.js";
 import { resolveToCwd } from "./path-utils";
 import { throwIfAborted } from "./runtime";
 
@@ -78,6 +79,31 @@ export interface GrepIRFile {
 export interface GrepIR {
 	totalMatches: number;
 	files: GrepIRFile[];
+}
+
+interface GrepPtcRecord {
+	path: string;
+	line: number;
+	hash: string;
+	anchor: string;
+	kind: "match" | "context";
+	raw: string;
+	display: string;
+}
+
+function collectPtcRecordsFromIR(
+	ir: GrepIR,
+	recordByRenderedLine: Map<string, GrepPtcRecord>,
+): GrepPtcRecord[] {
+	const records: GrepPtcRecord[] = [];
+	for (const file of ir.files) {
+		for (const line of file.lines) {
+			if (line.kind === "separator") continue;
+			const record = recordByRenderedLine.get(line.raw);
+			if (record) records.push(record);
+		}
+	}
+	return records;
 }
 
 const IR_MATCH_LINE_RE = /^(.+?):>>/;
@@ -259,6 +285,15 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 							content: result.content.map((item) =>
 								item === textBlock ? ({ ...item, text: warning } as typeof item) : item,
 							),
+							details: {
+								...(typeof result.details === "object" && result.details !== null ? result.details : {}),
+								ptcValue: {
+									tool: "grep",
+									summary: !!params.summary,
+									totalMatches: 0,
+									records: [],
+								},
+							},
 						};
 					}
 				} catch {
@@ -294,6 +329,7 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 			};
 
 			const transformed: string[] = [];
+			const recordByRenderedLine = new Map<string, GrepPtcRecord>();
 			let parsedCount = 0;
 			let candidateUnparsedCount = 0;
 			const candidateLinePattern = /^.+(?::|-)\d+(?::|-)\s/;
@@ -336,7 +372,18 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 							if (!patternRe.test(fileLines[i])) continue;
 							const lineNum = i + 1;
 							const marker = ">>";
-							transformed.push(`${parsed.displayPath}:${marker}${formatHashlineDisplay(lineNum, fileLines[i])}`);
+							const renderedLine = `${parsed.displayPath}:${marker}${formatHashlineDisplay(lineNum, fileLines[i])}`;
+							transformed.push(renderedLine);
+							const built = buildPtcLine(lineNum, fileLines[i]);
+							recordByRenderedLine.set(renderedLine, {
+								path: toAbsolutePath(parsed.displayPath),
+								line: built.line,
+								hash: built.hash,
+								anchor: built.anchor,
+								kind: "match",
+								raw: built.raw,
+								display: built.display,
+							});
 							emitted = true;
 						}
 						if (emitted) continue;
@@ -345,8 +392,19 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 				}
 				// Normal (non-bare-CR) path
 				const sourceLine = fileLines?.[parsed.lineNumber - 1] ?? parsed.text;
+				const built = buildPtcLine(parsed.lineNumber, sourceLine);
 				const marker = parsed.kind === "match" ? ">>" : "  ";
-				transformed.push(`${parsed.displayPath}:${marker}${formatHashlineDisplay(parsed.lineNumber, sourceLine)}`);
+				const renderedLine = `${parsed.displayPath}:${marker}${built.line}:${built.hash}|${built.display}`;
+				transformed.push(renderedLine);
+				recordByRenderedLine.set(renderedLine, {
+					path: toAbsolutePath(parsed.displayPath),
+					line: built.line,
+					hash: built.hash,
+					anchor: built.anchor,
+					kind: parsed.kind,
+					raw: built.raw,
+					display: built.display,
+				});
 			}
 
 			if (parsedCount === 0 && candidateUnparsedCount > 0) {
@@ -365,6 +423,12 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 						...passthroughDetails,
 						hashlinePassthrough: true,
 						hashlineWarning: warning,
+						ptcValue: {
+							tool: "grep",
+							summary: !!params.summary,
+							totalMatches: 0,
+							records: [],
+						},
 					},
 				};
 			}
@@ -383,11 +447,21 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 				}
 				: truncatedIR;
 			const formattedOutput = formatGrepOutput(outputIR, { summary, limit: effectiveLimit });
+			const ptcRecords = collectPtcRecordsFromIR(outputIR, recordByRenderedLine);
 			return {
 				...result,
 				content: result.content.map((item) =>
 					item === textBlock ? ({ ...item, text: formattedOutput } as typeof item) : item,
 				),
+				details: {
+					...(typeof result.details === "object" && result.details !== null ? result.details : {}),
+					ptcValue: {
+						tool: "grep",
+						summary: !!summary,
+						totalMatches: grepIR.totalMatches,
+						records: ptcRecords,
+					},
+				},
 			};
 		},
 	});

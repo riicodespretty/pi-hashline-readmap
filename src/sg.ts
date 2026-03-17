@@ -5,7 +5,8 @@ import path from "node:path";
 import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { normalizeToLF, stripBom } from "./edit-diff.js";
-import { ensureHashInit, formatHashlineDisplay } from "./hashline.js";
+import { ensureHashInit } from "./hashline.js";
+import { buildPtcLine } from "./ptc-value.js";
 import { resolveToCwd } from "./path-utils.js";
 
 type SgParams = { pattern: string; lang?: string; path?: string };
@@ -96,7 +97,12 @@ export function registerSgTool(pi: ExtensionAPI): void {
         if (!Array.isArray(matches) || matches.length === 0) {
           return {
             content: [{ type: "text", text: `No matches found for pattern: ${p.pattern}` }],
-            details: {},
+            details: {
+              ptcValue: {
+                tool: "sg",
+                files: [],
+              },
+            },
           };
         }
 
@@ -131,6 +137,11 @@ export function registerSgTool(pi: ExtensionAPI): void {
           else grouped.set(display, { abs, matches: [m] });
         }
         const blocks: string[] = [];
+        const ptcFiles: Array<{
+          path: string;
+          ranges: SgRange[];
+          lines: ReturnType<typeof buildPtcLine>[];
+        }> = [];
         for (const [display, { abs, matches: fileMatches }] of grouped) {
           const lines = await getFileLines(abs);
           if (!lines) continue;
@@ -140,22 +151,43 @@ export function registerSgTool(pi: ExtensionAPI): void {
             endLine: m.range.end.line + 1,
           }));
           const mergedRanges = mergeRanges(ranges);
+          const ptcFile = {
+            path: abs,
+            ranges: mergedRanges.map((range) => ({ ...range })),
+            lines: [] as ReturnType<typeof buildPtcLine>[],
+          };
           for (const range of mergedRanges) {
             for (let ln = range.startLine; ln <= range.endLine; ln++) {
               const srcLine = lines[ln - 1] ?? "";
-              blocks.push(`>>${formatHashlineDisplay(ln, srcLine)}`);
+              const built = buildPtcLine(ln, srcLine);
+              blocks.push(`>>${built.line}:${built.hash}|${built.display}`);
+              ptcFile.lines.push(built);
             }
           }
+          ptcFiles.push(ptcFile);
         }
 
         if (blocks.length === 0) {
           return {
             content: [{ type: "text", text: `No matches found for pattern: ${p.pattern}` }],
-            details: {},
+            details: {
+              ptcValue: {
+                tool: "sg",
+                files: [],
+              },
+            },
           };
         }
 
-        return { content: [{ type: "text", text: blocks.join("\n") }], details: {} };
+        return {
+          content: [{ type: "text", text: blocks.join("\n") }],
+          details: {
+            ptcValue: {
+              tool: "sg",
+              files: ptcFiles,
+            },
+          },
+        };
       } catch (err: any) {
         if (err?.code === "ENOENT") {
           return {

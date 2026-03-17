@@ -184,3 +184,13 @@ The original PR/branch history is still valid historical context, but #039 shoul
 ### Tests
 - Added regression coverage for `read`/`grep`, `sg`, `hashLines()`, `hashLine()`, mismatch diagnostics, and edit diagnostics
 - Verified with `npm test` → 71 passing files / 388 passing tests
+
+## Issue #053: Expose PTC-native structured results from read/grep/sg/edit — CLOSED ✅
+**Date**: 2026-03-16
+### Added
+- Added stable additive `details.ptcValue` payloads to `read`, `grep`, `sg`, and `edit` so downstream PTC consumers can use structured results without parsing human-formatted text (#053)
+- Added shared structured line helpers in `src/ptc-value.ts` to preserve consistent `{ line, hash, anchor, raw, display }` semantics across line-oriented tool payloads (#053)
+- Documented the `PTC structured output` schema contract in `README.md` for downstream consumers (#053)
+### Tests
+- Added dedicated regression coverage for `read`, `grep`, `sg`, and `edit` ptcValue payloads, including metadata, truncation alignment, and noop/warning cases
+- Verified with `npm run typecheck` and `npm test` → 76 passing files / 399 passing tests

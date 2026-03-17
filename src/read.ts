@@ -11,6 +11,7 @@ import { readFileSync } from "fs";
 import { readFile as fsReadFile } from "fs/promises";
 import { normalizeToLF, stripBom, hasBareCarriageReturn } from "./edit-diff";
 import { ensureHashInit, formatHashlineDisplay } from "./hashline";
+import { buildPtcLines, type PtcWarning } from "./ptc-value.js";
 import { looksLikeBinary } from "./binary-detect";
 import { resolveToCwd } from "./path-utils";
 import { throwIfAborted } from "./runtime";
@@ -106,6 +107,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			const normalized = normalizeToLF(stripBom(rawBuffer.toString("utf-8")).text);
 			const allLines = normalized.split("\n");
 			const total = allLines.length;
+			const structuredWarnings: PtcWarning[] = [];
 
 			let startLine = params.offset ? Math.max(1, params.offset) : 1;
 			let endIdx = params.limit ? Math.min(startLine - 1 + params.limit, total) : total;
@@ -162,6 +164,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			}
 
 			const selected = allLines.slice(startLine - 1, endIdx);
+			const ptcLines = buildPtcLines(startLine, selected);
 
 			const formatted = selected
 				.map((line, i) => {
@@ -183,12 +186,14 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			const shouldAppendMap =
 				!!params.map ||
 				(!!truncation.truncated && !params.offset && !params.limit && !symbolMatch);
+			let appendedMap = false;
 			if (shouldAppendMap) {
 				try {
 					const fileMap = await getOrGenerateMap(absolutePath);
 					if (fileMap) {
 						const mapText = formatFileMapWithBudget(fileMap);
 						text += "\n\n" + mapText;
+						appendedMap = true;
 					}
 				} catch {
 					// Map formatting failed — still return hashlined content without map
@@ -201,22 +206,60 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			}
 
 			if (symbolWarning) {
+				structuredWarnings.push({ code: "symbol-warning", message: symbolWarning.trim() });
 				text = symbolWarning + text;
 			}
 
 			if (hasBinaryContent) {
-				text = "[Warning: file appears to be binary — output may be garbled]\n\n" + text;
+				const warning = "[Warning: file appears to be binary — output may be garbled]";
+				structuredWarnings.push({ code: "binary-content", message: warning });
+				text = `${warning}\n\n${text}`;
 			}
 
 			if (hasBareCarriageReturn(rawBuffer.toString("utf-8"))) {
-				text =
-					"[Warning: file contains bare CR (\\r) line endings — line numbering may be inconsistent with grep and other tools]\n\n" +
-					text;
+				const warning = "[Warning: file contains bare CR (\\r) line endings — line numbering may be inconsistent with grep and other tools]";
+				structuredWarnings.push({ code: "bare-cr", message: warning });
+				text = `${warning}\n\n${text}`;
 			}
 
 			return {
 				content: [{ type: "text", text }],
-				details: { truncation: truncation.truncated ? truncation : undefined },
+				details: {
+					truncation: truncation.truncated ? truncation : undefined,
+					ptcValue: {
+						tool: "read",
+						path: absolutePath,
+						range: {
+							startLine,
+							endLine: endIdx,
+							totalLines: total,
+						},
+						warnings: structuredWarnings,
+						truncation: truncation.truncated
+							? {
+								outputLines: truncation.outputLines,
+								totalLines: total,
+								outputBytes: truncation.outputBytes,
+								totalBytes: truncation.totalBytes,
+							}
+							: null,
+						symbol: symbolMatch
+							? {
+								query: params.symbol ?? symbolMatch.name,
+								name: symbolMatch.name,
+								kind: symbolMatch.kind,
+								parentName: symbolMatch.parentName,
+								startLine: symbolMatch.startLine,
+								endLine: symbolMatch.endLine,
+							}
+							: null,
+						map: {
+							requested: !!params.map,
+							appended: appendedMap,
+						},
+						lines: ptcLines,
+					},
+				},
 			};
 		},
 	});

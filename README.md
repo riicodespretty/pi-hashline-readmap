@@ -215,6 +215,43 @@ brew install shellcheck yq scc
 - overlapping/adjacent match ranges are merged before output
 - output is grouped by file and anchored for editing
 
+### PTC structured output
+
+`read`, `grep`, `sg`, and `edit` keep their current human-facing `content[].text` output, but also expose a machine-facing payload at `details.ptcValue`.
+
+Current structured shapes:
+
+- `read.details.ptcValue`
+  - `tool: "read"`
+  - `path: string`
+  - `range: { startLine, endLine, totalLines }`
+  - `warnings: Array<{ code, message }>`
+  - `truncation: null | { outputLines, totalLines, outputBytes, totalBytes }`
+  - `symbol: null | { query, name, kind, parentName, startLine, endLine }`
+  - `map: { requested, appended }`
+  - `lines: Array<{ line, hash, anchor, raw, display }>`
+
+- `grep.details.ptcValue`
+  - `tool: "grep"`
+  - `summary: boolean`
+  - `totalMatches: number`
+  - `records: Array<{ path, line, hash, anchor, kind, raw, display }>`
+
+- `sg.details.ptcValue`
+  - `tool: "sg"`
+  - `files: Array<{ path, ranges: Array<{ startLine, endLine }>, lines: Array<{ line, hash, anchor, raw, display }> }>`
+
+- `edit.details.ptcValue`
+  - `tool: "edit"`
+  - `ok: boolean`
+  - `path: string`
+  - `summary: string`
+  - `diff: string`
+  - `firstChangedLine?: number`
+  - `warnings: string[]`
+  - `noopEdits: Array<{ editIndex, loc, currentContent }>`
+
+Hashes and anchors remain tied to raw file content semantics. `display` stays escaped for safe rendering, while `raw` preserves the underlying file text for programmatic consumers.
 ## Why this is especially good for agents
 
 This extension is optimized around the actual failure modes of coding agents:
