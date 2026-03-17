@@ -194,3 +194,13 @@ The original PR/branch history is still valid historical context, but #039 shoul
 ### Tests
 - Added dedicated regression coverage for `read`, `grep`, `sg`, and `edit` ptcValue payloads, including metadata, truncation alignment, and noop/warning cases
 - Verified with `npm run typecheck` and `npm test` → 76 passing files / 399 passing tests
+
+## Issue #054: Add PTC tool policy contract metadata — CLOSED ✅
+**Date**: 2026-03-17
+### Added
+- Added `HASHLINE_TOOL_PTC_POLICY` and `getHashlineToolPtcPolicy()` as a canonical, machine-readable PTC policy contract for `read`, `grep`, `sg`, and `edit` (#054)
+- Re-exported the PTC policy contract and related types from the package root so downstream consumers can import it programmatically without prose parsing (#054)
+- Documented recommended PTC exposure tiers in `README.md`, including optional downstream consumption by `pi-prompt-assembler` without introducing a runtime dependency (#054)
+### Tests
+- Added dedicated regression coverage for the canonical contract, package-root export, and README policy documentation
+- Verified with `npm test` and `npm run typecheck` → 79 passing files / 402 passing tests
