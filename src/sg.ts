@@ -8,6 +8,7 @@ import { normalizeToLF, stripBom } from "./edit-diff.js";
 import { ensureHashInit } from "./hashline.js";
 import { buildPtcLine } from "./ptc-value.js";
 import { resolveToCwd } from "./path-utils.js";
+import { buildSgOutput } from "./sg-output.js";
 
 type SgParams = { pattern: string; lang?: string; path?: string };
 
@@ -95,13 +96,11 @@ export function registerSgTool(pi: ExtensionAPI): void {
 
         const matches = JSON.parse(stdout);
         if (!Array.isArray(matches) || matches.length === 0) {
+          const emptyOutput = buildSgOutput({ pattern: p.pattern, files: [] });
           return {
-            content: [{ type: "text", text: `No matches found for pattern: ${p.pattern}` }],
+            content: [{ type: "text", text: emptyOutput.text }],
             details: {
-              ptcValue: {
-                tool: "sg",
-                files: [],
-              },
+              ptcValue: emptyOutput.ptcValue,
             },
           };
         }
@@ -138,6 +137,7 @@ export function registerSgTool(pi: ExtensionAPI): void {
         }
         const blocks: string[] = [];
         const ptcFiles: Array<{
+          displayPath: string;
           path: string;
           ranges: SgRange[];
           lines: ReturnType<typeof buildPtcLine>[];
@@ -152,6 +152,7 @@ export function registerSgTool(pi: ExtensionAPI): void {
           }));
           const mergedRanges = mergeRanges(ranges);
           const ptcFile = {
+            displayPath: display,
             path: abs,
             ranges: mergedRanges.map((range) => ({ ...range })),
             lines: [] as ReturnType<typeof buildPtcLine>[],
@@ -168,24 +169,23 @@ export function registerSgTool(pi: ExtensionAPI): void {
         }
 
         if (blocks.length === 0) {
+          const emptyOutput = buildSgOutput({ pattern: p.pattern, files: [] });
           return {
-            content: [{ type: "text", text: `No matches found for pattern: ${p.pattern}` }],
+            content: [{ type: "text", text: emptyOutput.text }],
             details: {
-              ptcValue: {
-                tool: "sg",
-                files: [],
-              },
+              ptcValue: emptyOutput.ptcValue,
             },
           };
         }
 
+        const builtOutput = buildSgOutput({
+          pattern: p.pattern,
+          files: ptcFiles,
+        });
         return {
-          content: [{ type: "text", text: blocks.join("\n") }],
+          content: [{ type: "text", text: builtOutput.text }],
           details: {
-            ptcValue: {
-              tool: "sg",
-              files: ptcFiles,
-            },
+            ptcValue: builtOutput.ptcValue,
           },
         };
       } catch (err: any) {
