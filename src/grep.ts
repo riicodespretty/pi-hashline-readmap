@@ -7,6 +7,7 @@ import { normalizeToLF, stripBom, hasBareCarriageReturn } from "./edit-diff";
 import { looksLikeBinary } from "./binary-detect";
 import { ensureHashInit, formatHashlineDisplay } from "./hashline";
 import { buildPtcLine } from "./ptc-value.js";
+import { buildGrepOutput } from "./grep-output.js";
 import { resolveToCwd } from "./path-utils";
 import { throwIfAborted } from "./runtime";
 
@@ -446,23 +447,50 @@ export function registerGrepTool(pi: ExtensionAPI): void {
 					files: truncatedIR.files.map((file) => ({ ...file, path: toAbsolutePath(file.path) })),
 				}
 				: truncatedIR;
-			const formattedOutput = formatGrepOutput(outputIR, { summary, limit: effectiveLimit });
-			const ptcRecords = collectPtcRecordsFromIR(outputIR, recordByRenderedLine);
-			return {
-				...result,
-				content: result.content.map((item) =>
-					item === textBlock ? ({ ...item, text: formattedOutput } as typeof item) : item,
-				),
-				details: {
-					...(typeof result.details === "object" && result.details !== null ? result.details : {}),
-					ptcValue: {
-						tool: "grep",
-						summary: !!summary,
-						totalMatches: grepIR.totalMatches,
-						records: ptcRecords,
-					},
-				},
-			};
+const ptcRecords = collectPtcRecordsFromIR(outputIR, recordByRenderedLine);
+const groups = outputIR.files.map((file) => ({
+	displayPath: file.path,
+	absolutePath: summary ? file.path : toAbsolutePath(file.path),
+	matchCount: file.matchCount,
+	entries: file.lines.map((line) => {
+		if (line.kind === "separator") {
+			return { kind: "separator" as const, text: line.raw };
+		}
+		const record = recordByRenderedLine.get(line.raw);
+		if (!record) {
+			throw new Error(`Missing grep record for rendered line: ${line.raw}`);
+		}
+
+		return {
+			kind: record.kind,
+			line: {
+				line: record.line,
+				hash: record.hash,
+				anchor: record.anchor,
+				raw: record.raw,
+				display: record.display,
+			},
+		};
+	}),
+}));
+	const builtOutput = buildGrepOutput({
+	summary: !!summary,
+	totalMatches: grepIR.totalMatches,
+	groups,
+	limit: effectiveLimit,
+	records: ptcRecords,
+});
+
+return {
+	...result,
+	content: result.content.map((item) =>
+		item === textBlock ? ({ ...item, text: builtOutput.text } as typeof item) : item,
+	),
+	details: {
+		...(typeof result.details === "object" && result.details !== null ? result.details : {}),
+		ptcValue: builtOutput.ptcValue,
+	},
+};
 		},
 	});
 }

@@ -13,6 +13,29 @@ export interface PtcWarning {
   message: string;
 }
 
+export interface PtcRange {
+  startLine: number;
+  endLine: number;
+  totalLines?: number;
+}
+
+export interface PtcFileGroup {
+  path: string;
+  ranges: PtcRange[];
+  lines: PtcLine[];
+}
+
+export interface PtcEditResult {
+  tool: "edit";
+  ok: boolean;
+  path: string;
+  summary: string;
+  diff: string;
+  firstChangedLine: number | undefined;
+  warnings: string[];
+  noopEdits: unknown[];
+}
+
 export function buildPtcLine(line: number, raw: string): PtcLine {
   const hash = computeLineHash(line, raw);
   return {
@@ -26,4 +49,49 @@ export function buildPtcLine(line: number, raw: string): PtcLine {
 
 export function buildPtcLines(startLine: number, rawLines: string[]): PtcLine[] {
   return rawLines.map((raw, index) => buildPtcLine(startLine + index, raw));
+}
+
+export function renderPtcLine(line: PtcLine): string {
+  return `${line.anchor}|${line.display}`;
+}
+
+export function renderPtcLines(lines: PtcLine[]): string {
+  return lines.map(renderPtcLine).join("\n");
+}
+
+export function buildPtcWarning(code: string, message: string): PtcWarning {
+  return { code, message };
+}
+
+export function buildPtcRange(startLine: number, endLine: number, totalLines?: number): PtcRange {
+  return totalLines === undefined ? { startLine, endLine } : { startLine, endLine, totalLines };
+}
+
+export function buildPtcFileGroup(path: string, ranges: PtcRange[], lines: PtcLine[]): PtcFileGroup {
+  return {
+    path,
+    ranges: ranges.map((range) => ({ ...range })),
+    lines: lines.map((line) => ({ ...line })),
+  };
+}
+
+export function buildPtcEditResult(input: {
+  ok?: boolean;
+  path: string;
+  summary: string;
+  diff: string;
+  firstChangedLine: number | undefined;
+  warnings: string[];
+  noopEdits: unknown[];
+}): PtcEditResult {
+  return {
+    tool: "edit",
+    ok: input.ok ?? true,
+    path: input.path,
+    summary: input.summary,
+    diff: input.diff,
+    firstChangedLine: input.firstChangedLine,
+    warnings: [...input.warnings],
+    noopEdits: [...input.noopEdits],
+  };
 }

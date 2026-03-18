@@ -7,6 +7,7 @@ import { detectLineEnding, generateCompactOrFullDiff, normalizeToLF, replaceText
 import { applyHashlineEdits, computeLineHash, ensureHashInit, parseLineRef, type HashlineEditItem, escapeControlCharsForDisplay } from "./hashline";
 import { resolveToCwd } from "./path-utils";
 import { throwIfAborted } from "./runtime";
+import { buildEditOutput } from "./edit-output.js";
 
 export function wrapWriteError(err: any, path: string): Error {
 	const code = err?.code;
@@ -230,23 +231,22 @@ export function registerEditTool(pi: ExtensionAPI): void {
 			const warnings: string[] = [];
 			if (anchorResult.warnings?.length) warnings.push(...anchorResult.warnings);
 			if (legacyNormalizationWarning) warnings.push(legacyNormalizationWarning);
-			const warn = warnings.length ? `\n\nWarnings:\n${warnings.join("\n")}` : "";
+			const builtOutput = buildEditOutput({
+				path: absolutePath,
+				displayPath: path,
+				diff: diffResult.diff,
+				firstChangedLine: anchorResult.firstChangedLine ?? diffResult.firstChangedLine,
+				warnings,
+				noopEdits: anchorResult.noopEdits ?? [],
+			});
 
+			const warn = warnings.length ? `\n\nWarnings:\n${warnings.join("\n")}` : "";
 			return {
-				content: [{ type: "text", text: `Updated ${path}${warn}` }],
+				content: [{ type: "text", text: builtOutput.text }],
 				details: {
 					diff: diffResult.diff,
 					firstChangedLine: anchorResult.firstChangedLine ?? diffResult.firstChangedLine,
-					ptcValue: {
-						tool: "edit",
-						ok: true,
-						path: absolutePath,
-						summary: `Updated ${path}`,
-						diff: diffResult.diff,
-						firstChangedLine: anchorResult.firstChangedLine ?? diffResult.firstChangedLine,
-						warnings,
-						noopEdits: anchorResult.noopEdits ?? [],
-					},
+					ptcValue: builtOutput.ptcValue,
 				} as EditToolDetails & {
 					ptcValue: {
 						tool: string;

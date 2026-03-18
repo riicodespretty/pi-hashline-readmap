@@ -195,6 +195,9 @@ The original PR/branch history is still valid historical context, but #039 shoul
 - Added dedicated regression coverage for `read`, `grep`, `sg`, and `edit` ptcValue payloads, including metadata, truncation alignment, and noop/warning cases
 - Verified with `npm run typecheck` and `npm test` → 76 passing files / 399 passing tests
 
+## [Unreleased]
+### Changed
+- Refactored `read`, `grep`, `sg`, and `edit` so chat text and `details.ptcValue` are projected from shared internal output builders while preserving existing hashlines, warning behavior, truncation behavior, and raw-content anchor semantics (#055)
 ## Issue #054: Add PTC tool policy contract metadata — CLOSED ✅
 **Date**: 2026-03-17
 ### Added
