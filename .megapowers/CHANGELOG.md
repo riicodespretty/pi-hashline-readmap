@@ -207,3 +207,24 @@ The original PR/branch history is still valid historical context, but #039 shoul
 ### Tests
 - Added dedicated regression coverage for the canonical contract, package-root export, and README policy documentation
 - Verified with `npm test` and `npm run typecheck` → 79 passing files / 402 passing tests
+
+## Issue #056 (Batch): Hashline + PTC Native Integration — CLOSED ✅
+**Date**: 2026-03-18
+**Source Issues**: #053 (ptcValue payloads), #054 (PTC metadata), #055 (shared IR)
+### Added
+- Inline runtime `ptc` metadata on `read`, `grep`, `sg`, `edit` tool definitions with callable/policy/pythonName/defaultExposure fields, backward-compatible with legacy `enabled`/`readOnly` (#056)
+- Runtime metadata discovery in pi-ptc-next ToolRegistry — discovers hashline tool eligibility from active tools' inline `ptc` metadata instead of hard-coded contracts (#056)
+- Active tool override execution — nested `code_execution` calls the hashline implementations directly when overrides are active (#056)
+- `details.ptcValue` passthrough in pi-ptc-next — structured values returned to Python unchanged without text parsing (#056)
+- `defaultExposure: "opt-in"` gating — `sg` requires explicit `PTC_CALLABLE_TOOLS` inclusion (#056)
+- `read` Python helper expanded with `symbol` and `map` keyword arguments (#056)
+- Full TypedDict models: `ReadResult`, `GrepResult`, `SgResult`, `AnchoredEditResult`, `EditNoop` (#056)
+- Live contract tests for read/grep/sg/edit that fail if TypedDict or README examples drift from real payloads (#056)
+- Real interop harness: sg → read(symbol) → edit → grep through CodeExecutor against actual pi-hashline-readmap (#056)
+### Fixed
+- Flaky `CustomToolManager` reload test — added polling fallback (mtime+size signatures at 250ms) for when `fs.watch` drops events (#056)
+- Policy drift-guard test now cross-checks `read.defaultExposure` alongside grep/sg/edit (#056)
+- Indentation fix on `reconcileFile` closing brace in pi-ptc-next (#056)
+### Tests
+- pi-hashline-readmap: 87 files, 419 tests, 0 failures
+- pi-ptc-next: 70 tests, 0 failures (up from ~55)

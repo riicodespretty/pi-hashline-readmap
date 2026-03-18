@@ -24,11 +24,20 @@ export type {
 const BASH_FILTER_ENABLED = true;
 
 export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
-  registerReadTool(pi);
-  registerEditTool(pi);
-  registerGrepTool(pi);
-  registerSgTool(pi);
+  const readTool = registerReadTool(pi);
+  const editTool = registerEditTool(pi);
+  const grepTool = registerGrepTool(pi);
+  const sgTool = registerSgTool(pi);
 
+  const toolExecutors = {
+    read: readTool,
+    edit: editTool,
+    grep: grepTool,
+    sg: sgTool,
+  };
+
+  (globalThis as any).__hashlineToolExecutors = toolExecutors;
+  pi.events.emit("hashline:tool-executors", toolExecutors);
   pi.on("tool_result", (event) => {
     if (!isBashToolResult(event)) {
       return undefined;

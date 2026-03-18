@@ -33,7 +33,7 @@ interface ReadParams {
 	map?: boolean;
 }
 
-export function registerReadTool(pi: ExtensionAPI): void {
+export function registerReadTool(pi: ExtensionAPI) {
 	const ptc = {
 		callable: true,
 		enabled: true,
@@ -287,4 +287,5 @@ return {
 	} satisfies Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof ptc };
 
 	pi.registerTool(tool);
+	return tool;
 }

@@ -26,6 +26,7 @@ describe("bash filter integration", () => {
       on(event: string, handler: Function) {
         handlers[event] = handler;
       },
+      events: { emit() {}, on() {} },
     };
 
     mod.default(mockPi as any);
@@ -59,6 +60,7 @@ describe("savings logging", () => {
       on(event: string, handler: Function) {
         handlers[event] = handler;
       },
+      events: { emit() {}, on() {} },
     };
 
     const bashEvent = makeEvent("bash", "t-log", { command: "echo hello" }, "\x1b[32mhello\x1b[0m");

@@ -50,7 +50,7 @@ const EDIT_DESC = readFileSync(new URL("../prompts/edit.md", import.meta.url), "
 
 // ─── Registration ───────────────────────────────────────────────────────
 
-export function registerEditTool(pi: ExtensionAPI): void {
+export function registerEditTool(pi: ExtensionAPI) {
 	const ptc = {
 		callable: true,
 		enabled: true,
@@ -273,4 +273,5 @@ export function registerEditTool(pi: ExtensionAPI): void {
 	} satisfies Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof ptc };
 
 	pi.registerTool(tool);
+	return tool;
 }

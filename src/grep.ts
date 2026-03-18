@@ -246,7 +246,7 @@ function escapeForRegex(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function registerGrepTool(pi: ExtensionAPI): void {
+export function registerGrepTool(pi: ExtensionAPI) {
 	const ptc = {
 		callable: true,
 		enabled: true,
@@ -505,4 +505,5 @@ return {
 	} satisfies Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof ptc };
 
 	pi.registerTool(tool);
+	return tool;
 }

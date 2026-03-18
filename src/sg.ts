@@ -67,7 +67,7 @@ function execFileText(
   });
 }
 
-export function registerSgTool(pi: ExtensionAPI): void {
+export function registerSgTool(pi: ExtensionAPI) {
   const ptc = {
     callable: true,
     enabled: true,
@@ -215,4 +215,5 @@ export function registerSgTool(pi: ExtensionAPI): void {
   } satisfies Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof ptc };
 
   pi.registerTool(tool);
+  return tool;
 }
