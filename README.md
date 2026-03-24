@@ -36,6 +36,16 @@ Cuts tokens and reduces exploratory round-trips.
 
 `grep` and `sg` output is hashline-anchored, so the agent can go straight from search to edit without a cleanup read in between.
 
+### Semantic edit classification
+
+After each successful edit, the result includes a `semanticSummary` in the structured output (`details.ptcValue.semanticSummary`) that classifies the change as `semantic`, `whitespace-only`, `mixed`, or `no-op`. This helps agents and reviewers quickly assess whether a change is substantive or cosmetic.
+
+When [difftastic](https://difftastic.wilfred.me/) (`difft`) is installed, classification uses AST-aware diffing for more accurate results — especially for detecting moved code blocks and formatting-only changes. Without difftastic, the tool falls back to internal line-level heuristics. Install with:
+
+```bash
+brew install difftastic
+```
+
 ### Less wasted context on noisy command output
 
 `bash` outputs from test runners, builds, git, linters, Docker, package managers, and more are compressed to the parts that matter.
@@ -196,7 +206,7 @@ Optional CLI tools for full functionality:
 
 ```bash
 brew install ast-grep          # required for sg tool
-brew install difftastic        # enhanced diffs
+brew install difftastic        # semantic edit classification (optional)
 brew install shellcheck yq scc # used by some compressors
 ```
 
