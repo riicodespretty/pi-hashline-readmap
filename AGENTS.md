@@ -1,179 +1,128 @@
 # AGENTS.md — Developer & Agent Guide
 
-This file describes how to develop, test, and contribute to `pi-hashline-readmap`. It is the authoritative guide for both human developers and AI coding agents working in this repository.
+Repo-local guide for working on `pi-hashline-readmap`.
 
 ## What This Project Is
 
-A unified [pi](https://github.com/mariozechner/pi-coding-agent) extension that replaces five built-in tools with enhanced versions. The extension is **symlinked** from `~/.pi/agent/extensions/pi-hashline-readmap` → this workspace, so changes here take effect immediately — no build/install step needed.
+`pi-hashline-readmap` is a unified [pi](https://github.com/mariozechner/pi-coding-agent) extension that replaces several built-in tools with enhanced versions:
 
-## Version Control: jj + GitHub
+- `read` — hashlined reads, structural maps, symbol-addressable reads
+- `edit` — hash-anchored edits with semantic diff summaries
+- `grep` — hashlined search results
+- `sg` — ast-grep wrapper with hashlined output
+- `bash` filtering — command-aware output compression
 
-This repo uses [jj (Jujutsu)](https://martinvonz.github.io/jj/) as the VCS frontend over a git backend. jj does **not** maintain git branch pointers (`HEAD` is always detached). All commits land on anonymous changesets; named bookmarks (like `main`) are explicit labels.
+The extension is symlinked from `~/.pi/agent/extensions/pi-hashline-readmap` to this workspace, so local edits take effect immediately.
 
-### PR Workflow (jj + gh)
+## Version Control
 
-Because `gh pr create` requires a named git branch, the correct workflow for submitting changes as a PR is:
+This repo is currently operated as a normal git repo with GitHub PRs. Do not assume `jj` is configured here.
 
-#### 1. Start a feature bookmark before you commit
-
-```bash
-# Create and switch to a feature bookmark
-jj bookmark create feature/my-feature -r @
-```
-
-#### 2. Make your changes and describe the commit
+Standard flow:
 
 ```bash
-# jj snapshots the working copy automatically; just describe it
-jj describe -m "feat: my feature description"
+git checkout main
+git pull --ff-only origin main
+git checkout -b feat/my-feature
+# edit / test
+git add -A
+git commit -m "feat: my feature description"
+git push -u origin feat/my-feature
+gh pr create --base main --head feat/my-feature
 ```
 
-#### 3. Advance to a new empty commit (seals the previous one)
+After merge:
 
 ```bash
-jj new
+git checkout main
+git pull --ff-only origin main
+git branch -d feat/my-feature
 ```
 
-#### 4. Push the feature bookmark to origin
+Use `git branch -D` only after verifying the work is on `origin/main`.
 
-```bash
-jj git push --bookmark feature/my-feature
-```
+### Megapowers-managed work
 
-#### 5. Create the PR via gh
-
-```bash
-gh pr create \
-  --title "feat: my feature description" \
-  --body "..." \
-  --base main \
-  --head feature/my-feature
-```
-
-#### 6. After merge: clean up and update main
-
-```bash
-jj git fetch
-jj bookmark set main -r 'main@origin'
-jj bookmark delete feature/my-feature
-```
-
-### Direct-to-main (quick fixes only)
-
-For trivial changes (typos, .gitignore tweaks, docs), it's acceptable to commit directly to `main`:
-
-```bash
-jj describe -m "chore: fix typo in README"
-jj new
-jj bookmark set main -r @-
-jj git push --bookmark main
-```
-
-### Megapowers-managed commits
-
-When working under the megapowers workflow (`/mega on`), **do not run jj or git commands manually**. Phase transitions automatically commit and manage bookmarks. Use `megapowers_signal` actions instead.
+When `/mega on` is active, do not run ad-hoc branch/commit/push commands outside the allowed workflow moments. Use megapowers tools for phase changes and TDD signals. Post-merge cleanup on local `main` is the main exception.
 
 ## Development
 
-### Prerequisites
+Prereqs:
 
 ```bash
 node --version   # >= 20
-npm install      # install dependencies
+npm install
 ```
 
-Optional CLI tools used by the extension:
+Useful optional tools:
 
 ```bash
-brew install ast-grep          # sg tool (M3)
-brew install difftastic        # enhanced diffs
-brew install shellcheck yq scc # linting/analysis utilities
+brew install ast-grep
+brew install difftastic
+brew install shellcheck yq scc
 ```
 
-### Running tests
+Validation:
 
 ```bash
-npm test             # vitest run
-npm run typecheck    # tsc --noEmit
+npm test
+npm run typecheck
 ```
 
-Tests live in `tests/`. All test files must pass before pushing.
+## Source map
 
-### Project structure
+- `index.ts` — extension entry point
+- `src/read.ts`, `src/edit.ts`, `src/grep.ts`, `src/sg.ts` — core tool implementations
+- `src/*-output.ts`, `src/*-render-helpers.ts` — tool result shaping / rendering
+- `src/readmap/` — structural mapping, symbol lookup, language detection, per-language mappers
+- `src/rtk/` — bash output routing and compression techniques
+- `prompts/` — tool prompt/schema docs
+- `scripts/` — helper scripts used by readmap internals
+- `tests/` — feature-focused tests and fixtures
 
-```
-index.ts              # Extension entry point — registers all tools + bash filter
-src/
-  read.ts             # read tool: hashlines + structural maps + symbol lookup
-  edit.ts             # edit tool: hash-anchored surgical edits
-  edit-diff.ts        # diff computation and patch application
-  grep.ts             # grep tool: regex search with hashlined results
-  sg.ts               # sg tool: ast-grep wrapper with hashlined output
-  hashline.ts         # LINE:HASH generation (xxhash-wasm)
-  map-cache.ts        # in-memory map cache (keyed by mtime)
-  path-utils.ts       # path resolution helpers
-  runtime.ts          # AbortSignal helpers
-  readmap/            # structural map engine
-    mapper.ts         # language dispatch + ctags + fallback chain
-    symbol-lookup.ts  # symbol-addressable read (find by name)
-    formatter.ts      # FileMap → human-readable text
-    language-detect.ts
-    types.ts
-    enums.ts
-    constants.ts
-    mappers/          # per-language implementations (17 languages)
-  rtk/                # bash output compression
-    bash-filter.ts    # routing entry point (command detection)
-    index.ts          # technique registry
-    ansi.ts           # ANSI escape stripping
-    test-output.ts    # test runner summarizer
-    build.ts          # build tool error extractor
-    git.ts            # git output compressor
-    linter.ts         # linter result summarizer
-    truncate.ts       # smart truncation
-prompts/
-  read.md             # read tool schema description
-  edit.md             # edit tool schema description
-  sg.md               # sg tool schema description
-tests/                # test files — one per feature area
-```
+## Common changes
 
-### Adding a new language mapper
+### New language mapper
 
-1. Create `src/readmap/mappers/<lang>.ts` — export a function matching `Mapper` type
-2. Register it in `src/readmap/mapper.ts` in the `MAPPERS` record
-3. Add the file extension in `src/readmap/language-detect.ts`
-4. Write tests in `tests/readmap-mappers-files.test.ts`
+1. Add `src/readmap/mappers/<lang>.ts`
+2. Register it in `src/readmap/mapper.ts`
+3. Update `src/readmap/language-detect.ts`
+4. Add tests in `tests/readmap-mappers-files.test.ts` and any focused integration tests needed
 
-### Adding a new bash compression technique
+### New bash compression technique
 
-1. Create `src/rtk/<technique>.ts` — export a `matches(cmd: string): boolean` and `compress(output: string): string`
+1. Add implementation under `src/rtk/`
 2. Register it in `src/rtk/index.ts`
-3. Write tests in `tests/bash-filter.test.ts`
+3. Add/update focused `tests/rtk-*.test.ts`
+4. Verify `tests/bash-filter.test.ts` still covers the routing correctly
 
-## What NOT to commit
+### Tool output contract change
 
-The `.gitignore` excludes:
+When changing `read`, `edit`, `grep`, or `sg` output:
 
-- `node_modules/`, `dist/`, `build/`, `coverage/`, `.vite/`
-- `.megapowers/` — megapowers workflow state (local only)
-- `.pi/` — pi agent state
-- `.npmrc`, `.zellij*` — local tool config
-- Planning/internal docs: `ARCHITECTURE.md`, `BUILD-PLAN.md`, `DESIGN.md`, `PRD.md`, `ROADMAP.md`, `AGENT-NATIVE-TOOLS.md`, `docs/features/`
+1. Update the relevant `*-output.ts` / render helper modules
+2. Update `prompts/` docs if the contract changed
+3. Add/update tests that pin user-visible behavior
+4. Check `README.md` examples if behavior changed materially
 
-These live locally but are never pushed.
+## Local-only / ignored state
+
+The repo intentionally ignores or treats as local-only state such as:
+
+- `node_modules/`, `dist/`, `build/`, `coverage/`, `.vite/`, `tmp/`, `.cache/`
+- `.megapowers/`, `.pi/`, `.kotadb/`, `.gh-status.json`
+- editor/machine-local files like `.vscode/`, `.idea/`, `.zellij*`, `.npmrc`
+- local planning docs like `ARCHITECTURE.md`, `BUILD-PLAN.md`, `DESIGN.md`, `PRD.md`, `ROADMAP.md`, `AGENT-NATIVE-TOOLS.md`, `docs/features/`
+- transient artifacts like `*.log`, `*.tgz`, `*.tsbuildinfo`, `.env*`
+
+Delete temporary debugging files before finishing.
 
 ## Publishing
 
 ```bash
-# Dry run — see what would be published
 npm pack --dry-run
-
-# Publish to npm
 npm publish
 ```
-
-The `files` field in `package.json` limits the tarball to: `index.ts`, `src/`, `prompts/`, `LICENSE`, `README.md`.
 
 Install from npm:
 
@@ -181,7 +130,7 @@ Install from npm:
 pi install npm:pi-hashline-readmap
 ```
 
-Install from git (no npm publish needed):
+Install from git:
 
 ```bash
 pi install git:github.com/coctostan/pi-hashline-readmap

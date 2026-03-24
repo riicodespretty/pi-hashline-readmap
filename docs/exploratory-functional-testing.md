@@ -1,194 +1,139 @@
-# Exploratory / Adversarial Functional Testing Report
+# Exploratory Functional Testing Note
 
-This document records a **manual, exploratory (non-unit) functional test** of the `pi-hashline-readmap` extension tools.
+Current repo snapshot note for `pi-hashline-readmap`.
 
+- Date: 2026-03-24
 - Repo: `pi-hashline-readmap`
-- Date: 2026-03-02
-- Focus: try normal usage + try to break tools via edge cases
-- Tools exercised: `read`, `edit`, `grep`, `sg`, plus the bash output filter
+- Scope: current expected behavior of the package, based on the present codebase and passing automated suite
 
-## Test setup
+## Current baseline
 
-A sandbox was created under:
+Validation at the time of this note:
 
-- `tmp/exploratory/`
+```bash
+npm run typecheck
+npm test
+```
 
-with the following files (representative edge cases):
+Observed result:
 
-- `sample.ts` — TypeScript with two same-named exported functions + a class
-- `large.txt` — ~500KB text file (forces truncation in `read`)
-- `large.ts` — ~110KB TS file with thousands of exported functions (forces truncation + structural map)
-- `crlf.txt` — CRLF line endings
-- `regex.txt` — regex metacharacters, anchors like `^` and `$`
-- `binary.bin` — random bytes (non-image binary)
-- `bad.ts` — intentionally invalid/unparseable TypeScript
+- `npm run typecheck` — passes
+- `npm test` — passes
+- Vitest suite: **107 test files / 524 tests** passing
 
-## What worked (basic functionality)
+This document is not a bug diary. It is the current testing reference for what the package is expected to do.
+
+## Expected functionality
 
 ### `read`
 
-- Hashlines appear correct on normal text/TS files.
-- Truncation works and suggests using `offset=...` to continue.
-- `symbol=...` reads work for unambiguous symbols.
-- Structural map appears for large TS files.
+Expected behavior:
 
-### `grep`
+- returns `LINE:HASH|content` hashlines for text files
+- supports targeted reads via `offset` and `limit`
+- appends a structural map automatically when a file is truncated
+- supports `map: true` to request a structural map explicitly
+- supports `symbol` lookup for mapped file types
+- supports `bundle: "local"` for same-file support context around a symbol read
+- warns and falls back sensibly for unmappable files or missing symbols
+- handles binary-ish / control-character-heavy input defensively enough to avoid unsafe raw rendering in normal output
 
-- Regex and literal modes behave as expected.
-- `ignoreCase`, `context`, and `limit` work.
-- Returned matches include `LINE:HASH` anchors usable by `edit`.
+Practical expectation:
+
+- a user should be able to inspect a large file, jump to a symbol, and obtain stable anchors for later edits without rereading the whole file unnecessarily
 
 ### `edit`
 
-- Hash mismatch detection works (stale anchors are detected and the tool prints updated `>>>` anchors).
+Expected behavior:
 
-### bash filter
+- applies anchor-verified edits using anchors from `read`, `grep`, or `sg`
+- supports `set_line`, `replace_lines`, `insert_after`, and `replace`
+- rejects stale anchors with useful mismatch diagnostics
+- returns diff-oriented result metadata in structured output
+- emits additive semantic edit summaries without changing the core success text contract
+- preserves line-ending behavior correctly enough for normal text editing workflows, including prior regressions around CRLF handling
 
-- `npm test` output was summarized/condensed, indicating the bash compression filter is active.
+Practical expectation:
 
-## Breaks / bugs found (with repro)
+- a user should be able to read a line, edit exactly that line, and get safe failure if the file drifted
 
-### 1) `sg` reports “Command failed” when there are **no matches**
+### `grep`
 
-This is the biggest functional issue observed.
+Expected behavior:
 
-**Repro**:
+- returns anchored matches suitable for direct use with `edit`
+- supports regex and literal search
+- supports `ignoreCase`, `context`, `limit`, and `summary`
+- supports `scope: "symbol"` to group results by enclosing mapped symbol when available
+- truncates large result sets with explicit indicators instead of failing silently
+- handles problematic file content defensively enough to avoid misleading raw output where possible
 
-```ts
-sg({ pattern: "console.log($$$ARGS)", lang: "typescript", path: "tmp/exploratory/sample.ts" })
-```
+Practical expectation:
 
-**Actual**:
+- a user should be able to search, understand the enclosing code region, and edit from the search result directly
 
-- Returns an error like:
-  - `Command failed: sg run --json ...`
+### `sg`
 
-**Expected**:
+Expected behavior:
 
-- Should return the normal no-results response, e.g.
-  - `No matches found for pattern: ...`
+- wraps `ast-grep` for structural search
+- returns merged anchored match blocks grouped by file
+- supports no-match cases cleanly rather than surfacing them as execution failures
+- integrates cleanly into search → edit workflows
 
-**Likely cause**:
+Prerequisite:
 
-- `ast-grep` appears to exit with code `1` for “no matches”.
-- `src/sg.ts` uses `execFileText()` which rejects on any non-zero exit code, so `stdout` is never parsed.
+- `ast-grep` must be installed locally for real execution
 
----
+### `bash` output filtering
 
-### 2) `edit` cannot truly “delete a line” (docs say it can)
+Expected behavior:
 
-Tool docs state `set_line` can “Replace or delete a single line”, but:
+- reduces noisy output while preserving useful signal for common command classes
+- includes targeted compression for tests, build tools, git, linters, docker, package managers, HTTP clients, transfer tools, and file-listing commands
+- strips ANSI noise
+- leaves truly useful output intact enough that the command result remains actionable
 
-- `set_line(..., new_text: "")` leaves an empty line (does not remove it)
-- `replace_lines(..., new_text: "")` also leaves a blank line behind
+Practical expectation:
 
-**Repro**:
+- common local development commands should consume less context than raw terminal output
 
-1) `read(tmp/exploratory/regex.txt)` to obtain anchors
-2) then:
+## Areas covered by the current automated suite
 
-```ts
-edit({
-  path: "tmp/exploratory/regex.txt",
-  edits: [{ set_line: { anchor: "3:HASH", new_text: "" } }]
-})
-```
+The present test suite covers, at minimum:
 
-**Actual**:
+- entry-point registration
+- hashline generation
+- `read` output shape, truncation, maps, symbol lookup, local bundles, and rendering helpers
+- `edit` output, diff generation, semantic classification, difftastic integration/fallbacks, and anchor safety
+- `grep` output, summary mode, symbol-scoped grouping, truncation indicators, and rendering helpers
+- `sg` formatting, schema handling, execution behavior, no-match behavior, and path handling
+- binary / control-character handling regressions
+- map cache behavior
+- RTK / bash filter routing and compressor-specific behavior
+- public PTC policy/value contracts
+- README / prompts / scripts file integrity checks
 
-- Line becomes blank but remains present.
+## Manual spot-check guidance
 
-**Expected (per docs)**:
+When doing manual validation beyond the automated suite, the highest-value checks are:
 
-- The line should be removed entirely.
+1. `read` on a large source file with `map: true`
+2. `read(symbol=...)` on an ambiguous and an unambiguous symbol
+3. `grep(..., scope: "symbol")` on a mapped TypeScript or Python file
+4. `sg(...)` with both a match and a deliberate no-match query
+5. `edit` using a fresh anchor, then repeating with a stale anchor to confirm mismatch handling
+6. representative `bash` commands such as `npm test`, `tsc --noEmit`, `git diff`, `docker build`, `curl`, and `find`
 
----
+## Non-goals of this note
 
-### 3) `edit` corrupts CRLF files (mixed CR/CRLF + extra blank lines)
+This file should stay short and current.
 
-This can subtly dirty files and introduce inconsistent line endings.
+It should not become:
 
-**Repro**:
+- a historical session log
+- a list of already-fixed bugs
+- a scratchpad for temporary repro steps
+- a substitute for the automated test suite
 
-Start with `tmp/exploratory/crlf.txt` (CRLF line endings), then:
-
-```ts
-edit({
-  path: "tmp/exploratory/crlf.txt",
-  edits: [{ insert_after: { anchor: "1:02", text: "inserted\r\n" } }]
-})
-```
-
-**Actual**:
-
-- File ends up with mixed line endings.
-- `file` reported: `ASCII text, with CRLF, CR line terminators`.
-- Extra blank lines appeared.
-- Hex dump showed doubled `0d` sequences (bare `\r` introduced).
-
-**Expected**:
-
-- Preserve file’s EOL convention consistently.
-- Inserted text should be normalized to match file EOL style.
-- No stray `\r` characters.
-
----
-
-### 4) `read(symbol=...)` ambiguity message is misleading for top-level symbol collisions
-
-If a file has two top-level functions with the same name, the tool reports:
-
-> “Use dot notation to disambiguate.”
-
-…but dot notation cannot disambiguate two top-level `add()` overloads.
-
-**Repro**:
-
-```ts
-read({ path: "tmp/exploratory/sample.ts", symbol: "add" })
-```
-
-**Actual**:
-
-- Ambiguity list is shown
-- Suggests dot notation
-
-**Expected**:
-
-- Provide an addressing scheme that can disambiguate top-level collisions, e.g.
-  - `add#1` / `add#2`
-  - `add@line:3`
-  - signature-based selection (`add(a: number, b: number)`) if available
-
----
-
-### 5) `read`/`grep` operate on arbitrary binary as UTF-8 text (no warning)
-
-Not necessarily a strict bug, but it’s easy to get misleading output.
-
-**Repro**:
-
-```ts
-read({ path: "tmp/exploratory/binary.bin" })
-```
-
-```ts
-grep({ pattern: "p", path: "tmp/exploratory/binary.bin" })
-```
-
-**Actual**:
-
-- Binary content is rendered with replacement characters / garbage text.
-- `grep` can match inside that rendered output.
-
-**Suggestion**:
-
-- Detect likely-binary files (NUL bytes or low UTF-8 validity) and warn or refuse by default.
-
-## Suggested fixes (high level)
-
-1) **`sg`:** treat exit code `1` as “no matches”, parse stdout anyway, and only error on other exit codes.
-2) **`edit`:** implement true line deletion semantics or update docs to match behavior.
-3) **`edit`:** preserve CRLF files correctly (normalize insertions to file EOL, avoid mixed terminators).
-4) **`read(symbol=...)`:** improve ambiguity resolution UX for top-level symbol collisions.
-5) **binary handling:** warn/refuse by default (optional configurable behavior).
+If a new issue is found, capture it in issue tracking or a focused repro test rather than expanding this note indefinitely.
