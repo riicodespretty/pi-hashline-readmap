@@ -1,5 +1,7 @@
 # pi-hashline-readmap
 
+![pi-hashline-readmap banner](./banner.png)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/pi-hashline-readmap)](https://www.npmjs.com/package/pi-hashline-readmap)
 
@@ -375,8 +377,8 @@ npm run typecheck
 ```
 
 As of the current repository state, the suite passes with:
-- **100** test files
-- **496** tests
+- **107** test files
+- **524** tests
 
 ### Local development notes
 This repository is intended to be used as a pi extension workspace. In local development, changes can take effect immediately when the extension is installed from the local checkout.

@@ -54,6 +54,12 @@ DESIGN.md
 PRD.md
 docs/features/
 .kotadb/
+# Local scratch / ad-hoc testing artifacts
+.bg-shell/
+.user-testing/
+HANDOFF.md
+TOOL_TESTING_REPORT*.md
+USER_REALISTIC_TESTING_REPORT*.md
 
 # ── GSD baseline (auto-generated) ──
 .gsd
