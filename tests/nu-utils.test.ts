@@ -1,0 +1,52 @@
+import { describe, it, expect } from "vitest";
+import { isNuAvailable, truncateNuOutput } from "../src/nu.js";
+
+describe("isNuAvailable", () => {
+  it("returns a boolean", () => {
+    const result = isNuAvailable();
+    expect(typeof result).toBe("boolean");
+  });
+});
+
+describe("truncateNuOutput", () => {
+  it("passes through short output unchanged", () => {
+    expect(truncateNuOutput("hello")).toBe("hello");
+  });
+
+  it("passes through empty string unchanged", () => {
+    expect(truncateNuOutput("")).toBe("");
+  });
+
+  it("truncates output exceeding 2000 lines", () => {
+    const lines = Array.from({ length: 2500 }, (_, i) => `line ${i}`);
+    const result = truncateNuOutput(lines.join("\n"));
+    const resultLines = result.split("\n");
+    // 2000 content lines + 1 truncation message line
+    expect(resultLines.length).toBeLessThanOrEqual(2001);
+    expect(result).toContain("500 more lines truncated");
+  });
+
+  it("truncates output exceeding 50KB", () => {
+    const big = "x".repeat(60 * 1024);
+    const result = truncateNuOutput(big);
+    expect(Buffer.byteLength(result, "utf8")).toBeLessThanOrEqual(52 * 1024);
+    expect(result).toContain("truncated at 50 KB");
+  });
+
+  it("applies line truncation before byte truncation when lines are short", () => {
+    // Short lines (4 chars each) so 3000 lines = ~15KB (under 50KB)
+    // This ensures line truncation fires, not byte truncation
+    const lines = Array.from({ length: 3000 }, (_, i) => `L${i}`);
+    const result = truncateNuOutput(lines.join("\n"));
+    expect(result).toContain("more lines truncated");
+    // Should NOT have byte truncation since total is well under 50KB
+    expect(result).not.toContain("truncated at 50 KB");
+  });
+
+  it("handles exactly 2000 lines without truncation", () => {
+    const lines = Array.from({ length: 2000 }, (_, i) => `line ${i}`);
+    const input = lines.join("\n");
+    const result = truncateNuOutput(input);
+    expect(result).toBe(input);
+  });
+});

@@ -72,7 +72,7 @@ npm run typecheck
 ## Source map
 
 - `index.ts` — extension entry point
-- `src/read.ts`, `src/edit.ts`, `src/grep.ts`, `src/sg.ts` — core tool implementations
+- `src/read.ts`, `src/edit.ts`, `src/grep.ts`, `src/sg.ts`, `src/nu.ts` — core tool implementations
 - `src/*-output.ts`, `src/*-render-helpers.ts` — tool result shaping / rendering
 - `src/readmap/` — structural mapping, symbol lookup, language detection, per-language mappers
 - `src/rtk/` — bash output routing and compression techniques
