@@ -12,10 +12,10 @@ import type { FileMap, FileSymbol } from "../types.js";
 import { DetailLevel, SymbolKind } from "../enums.js";
 
 // function name() { ... } or function name { ... }
-const FUNC_KEYWORD_RE = /^\s*function\s+(\w+)\s*(?:\(\s*\))?\s*\{?\s*$/;
+const FUNC_KEYWORD_RE = /^\s*function\s+(\w+)\s*(?:\(\s*\))?\s*(?:\{.*)?$/;
 
 // name() { ... }
-const FUNC_PARENS_RE = /^\s*(\w+)\s*\(\s*\)\s*\{?\s*$/;
+const FUNC_PARENS_RE = /^\s*(\w+)\s*\(\s*\)\s*(?:\{.*)?$/;
 
 // alias name='...' or alias name="..."
 const ALIAS_RE = /^\s*alias\s+(\w[\w-]*)=/;
@@ -151,11 +151,35 @@ export async function shellMapper(
       // Try export
       const exportMatch = trimmed.match(EXPORT_RE);
       if (exportMatch) {
+        const name = exportMatch[1];
+        let endLine = lineNum;
+
+        // Check for unclosed quote spanning multiple lines
+        const eqIdx = trimmed.indexOf("=");
+        const afterEquals = trimmed.slice(eqIdx + 1);
+        let quoteChar: string | null = null;
+        if (afterEquals.startsWith('"')) quoteChar = '"';
+        else if (afterEquals.startsWith("'")) quoteChar = "'";
+
+        if (quoteChar) {
+          // Check if the opening quote is closed on this line
+          const rest = afterEquals.slice(1); // everything after opening quote
+          if (!rest.includes(quoteChar)) {
+            // Unclosed quote — scan forward for closing quote
+            for (let j = i + 1; j < lines.length; j++) {
+              if (lines[j].includes(quoteChar)) {
+                endLine = j + 1; // 1-indexed
+                i = j; // advance main loop past continuation lines
+                break;
+              }
+            }
+          }
+        }
         symbols.push({
-          name: exportMatch[1],
+          name,
           kind: SymbolKind.Variable,
           startLine: lineNum,
-          endLine: lineNum,
+          endLine,
           signature: trimmed,
         });
         continue;
