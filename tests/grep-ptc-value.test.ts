@@ -47,11 +47,11 @@ describe("grep ptcValue", () => {
     const result = await callGrepTool({ pattern: "createDemoDirectory", path: filePath, literal: true, context: 1 });
     const text = getTextContent(result);
     const ptc = result.details?.ptcValue;
-
     expect(ptc).toBeDefined();
     expect(ptc.tool).toBe("grep");
     expect(ptc.summary).toBe(false);
     expect(ptc.totalMatches).toBe(1);
+    expect(Object.keys(ptc.records[0]).sort()).toEqual(["anchor", "kind", "line", "path"]);
     expect(ptc.records).toEqual([
       { lineNumber: 44, kind: "context" as const },
       { lineNumber: 45, kind: "match" as const },
@@ -62,14 +62,10 @@ describe("grep ptcValue", () => {
       return {
         path: filePath,
         line: lineNumber,
-        hash,
         anchor: `${lineNumber}:${hash}`,
         kind,
-        raw,
-        display: escapeControlCharsForDisplay(raw),
       };
     }));
-
     const expectedText = [
       "[1 matches in 1 files]",
       `--- ${displayPath} (1 matches) ---`,
@@ -83,7 +79,6 @@ describe("grep ptcValue", () => {
         return `${displayPath}:${marker}${lineNumber}:${hash}|${escapeControlCharsForDisplay(raw)}`;
       }),
     ].join("\n");
-
     expect(text).toBe(expectedText);
   });
   it("keeps ptc records aligned with the truncated rendered output", async () => {

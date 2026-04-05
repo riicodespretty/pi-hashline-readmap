@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { buildPtcLine } from "../src/ptc-value.js";
 import { ensureHashInit } from "../src/hashline.js";
-import { buildGrepOutput, type GrepOutputRecord } from "../src/grep-output.js";
+import { buildGrepOutput } from "../src/grep-output.js";
 
 describe("buildGrepOutput symbol scope", () => {
   beforeAll(async () => {
     await ensureHashInit();
   });
+
   it("renders grouped symbol blocks and additive scopes metadata without replacing records", () => {
     const absolutePath = "/tmp/scoped.ts";
     const displayPath = "scoped.ts";
@@ -18,10 +19,16 @@ describe("buildGrepOutput symbol scope", () => {
     ];
 
     const ptcLines = rawLines.map((raw, index) => buildPtcLine(index + 1, raw));
-    const records: GrepOutputRecord[] = ptcLines.map((line, index) => ({
+    const records = ptcLines.map((line, index) => ({
       ...line,
       path: absolutePath,
-      kind: index === 1 || index === 2 ? "match" : "context",
+      kind: index === 1 || index === 2 ? ("match" as const) : ("context" as const),
+    }));
+    const compactRecords = ptcLines.map((line, index) => ({
+      path: absolutePath,
+      line: line.line,
+      anchor: line.anchor,
+      kind: index === 1 || index === 2 ? ("match" as const) : ("context" as const),
     }));
 
     const built = buildGrepOutput({
@@ -62,7 +69,8 @@ describe("buildGrepOutput symbol scope", () => {
       `scoped.ts:  ${ptcLines[3].anchor}|${ptcLines[3].display}`,
     ].join("\n"));
 
-    expect(built.ptcValue.records).toEqual(records);
+    expect(Object.keys(built.ptcValue.records[0]).sort()).toEqual(["anchor", "kind", "line", "path"]);
+    expect(built.ptcValue.records).toEqual(compactRecords);
     expect(built.ptcValue.scopes).toEqual({
       mode: "symbol",
       groups: [

@@ -1,7 +1,20 @@
 import type { PtcLine, PtcWarning } from "./ptc-value.js";
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  formatSize,
+  truncateHead,
+} from "@mariozechner/pi-coding-agent";
 
 export interface GrepOutputRecord extends PtcLine {
   path: string;
+  kind: "match" | "context";
+}
+
+export interface GrepOutputPtcRecord {
+  path: string;
+  line: number;
+  anchor: string;
   kind: "match" | "context";
 }
 
@@ -42,6 +55,7 @@ export interface BuildGrepOutputInput {
   records: GrepOutputRecord[];
   scopeMode?: "symbol";
   scopeWarnings?: GrepScopeWarning[];
+  passthroughLines?: string[];
 }
 
 export interface GrepOutputResult {
@@ -50,7 +64,7 @@ export interface GrepOutputResult {
     tool: "grep";
     summary: boolean;
     totalMatches: number;
-    records: GrepOutputRecord[];
+    records: GrepOutputPtcRecord[];
     scopes?: {
       mode: "symbol";
       groups: Array<{
@@ -102,7 +116,6 @@ export function buildGrepOutput(input: BuildGrepOutputInput): GrepOutputResult {
   const fileCount = new Set(input.groups.map((group) => group.absolutePath)).size;
   const header = `[${input.totalMatches} matches in ${fileCount} files]`;
   let text: string;
-
   if (input.summary) {
     const fileLines = [...input.groups]
       .sort((a, b) => b.matchCount - a.matchCount)
@@ -118,26 +131,36 @@ export function buildGrepOutput(input: BuildGrepOutputInput): GrepOutputResult {
     }
     text = blocks.join("\n");
   }
-
+  if ((input.passthroughLines?.length ?? 0) > 0) {
+    text += `\n\n${input.passthroughLines!.join("\n")}`;
+  }
   if (input.limit !== undefined && input.totalMatches === input.limit) {
     text += `\n\n[Results truncated at ${input.limit} matches — refine pattern or increase limit]`;
   }
-
   if (!input.summary && input.scopeMode === "symbol" && (input.scopeWarnings?.length ?? 0) > 0) {
     text = `${input.scopeWarnings!.map((warning) => warning.message).join("\n\n")}\n\n${text}`;
   }
-
+  const truncated = truncateHead(text, {
+    maxLines: DEFAULT_MAX_LINES,
+    maxBytes: Math.min(DEFAULT_MAX_BYTES, 50 * 1024),
+  });
+  if (truncated.truncated) {
+    text = `${truncated.content}\n\n[Output truncated: showing ${truncated.outputLines} of ${truncated.totalLines} lines (${formatSize(truncated.outputBytes)} of ${formatSize(truncated.totalBytes)}). Refine pattern or increase limit.]`;
+  }
   const ptcValue: GrepOutputResult["ptcValue"] = {
     tool: "grep",
     summary: input.summary,
     totalMatches: input.totalMatches,
-    records: input.records,
+    records: input.records.map((record) => ({
+      path: record.path,
+      line: record.line,
+      anchor: record.anchor,
+      kind: record.kind,
+    })),
   };
-
   if (!input.summary && input.scopeMode === "symbol") {
     ptcValue.scopes = buildScopeMetadata(input.groups, input.scopeWarnings ?? []);
   }
-
   return {
     text,
     ptcValue,

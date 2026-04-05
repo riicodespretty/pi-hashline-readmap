@@ -6,7 +6,7 @@ import path from "path";
 import { readFileSync } from "node:fs";
 import { normalizeToLF, stripBom, hasBareCarriageReturn } from "./edit-diff";
 import { looksLikeBinary } from "./binary-detect";
-import { ensureHashInit, formatHashlineDisplay } from "./hashline";
+import { ensureHashInit, formatHashlineDisplay, escapeControlCharsForDisplay } from "./hashline";
 import { buildPtcLine } from "./ptc-value.js";
 import { buildGrepOutput } from "./grep-output.js";
 import { getOrGenerateMap } from "./map-cache.js";
@@ -394,6 +394,7 @@ export function registerGrepTool(pi: ExtensionAPI, options?: { astSearchGuidelin
 			};
 
 			const transformed: string[] = [];
+			const passthroughLines: string[] = [];
 			const recordByRenderedLine = new Map<string, GrepPtcRecord>();
 			let parsedCount = 0;
 			let candidateUnparsedCount = 0;
@@ -406,10 +407,13 @@ export function registerGrepTool(pi: ExtensionAPI, options?: { astSearchGuidelin
 					if (candidateLinePattern.test(line)) {
 						candidateUnparsedCount++;
 					}
+					const trimmed = line.trim();
+					if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+						passthroughLines.push(trimmed);
+					}
 					transformed.push(line);
 					continue;
 				}
-
 				parsedCount++;
 				const absolute = toAbsolutePath(parsed.displayPath);
 				const fileLines = await getFileLines(absolute);
@@ -459,7 +463,8 @@ export function registerGrepTool(pi: ExtensionAPI, options?: { astSearchGuidelin
 				const sourceLine = fileLines?.[parsed.lineNumber - 1] ?? parsed.text;
 				const built = buildPtcLine(parsed.lineNumber, sourceLine);
 				const marker = parsed.kind === "match" ? ">>" : "  ";
-				const renderedLine = `${parsed.displayPath}:${marker}${built.line}:${built.hash}|${built.display}`;
+				const renderedDisplay = escapeControlCharsForDisplay(parsed.text);
+				const renderedLine = `${parsed.displayPath}:${marker}${built.anchor}|${renderedDisplay}`;
 				transformed.push(renderedLine);
 				recordByRenderedLine.set(renderedLine, {
 					path: toAbsolutePath(parsed.displayPath),
@@ -468,7 +473,7 @@ export function registerGrepTool(pi: ExtensionAPI, options?: { astSearchGuidelin
 					anchor: built.anchor,
 					kind: parsed.kind,
 					raw: built.raw,
-					display: built.display,
+					display: renderedDisplay,
 				});
 			}
 
@@ -576,23 +581,29 @@ if (p.scope === "symbol" && !summary) {
 		),
 	);
 }
-	const builtOutput = buildGrepOutput({
-	summary: !!summary,
-	totalMatches: grepIR.totalMatches,
-	groups: renderedGroups,
-	limit: effectiveLimit,
-	records: ptcRecords,
-	scopeMode: p.scope === "symbol" && !summary ? "symbol" : undefined,
-	scopeWarnings,
-});
+			const builtOutput = buildGrepOutput({
+				summary: !!summary,
+				totalMatches: grepIR.totalMatches,
+				groups: renderedGroups,
+				limit: effectiveLimit,
+				records: ptcRecords,
+				scopeMode: p.scope === "symbol" && !summary ? "symbol" : undefined,
+				scopeWarnings,
+				passthroughLines,
+			});
 
+const existingDetails =
+	typeof result.details === "object" && result.details !== null
+		? (result.details as Record<string, unknown>)
+		: {};
+const { linesTruncated: _ignoredLinesTruncated, truncation: _ignoredTruncation, ...compactDetails } = existingDetails;
 return {
 	...result,
 	content: result.content.map((item) =>
 		item === textBlock ? ({ ...item, text: builtOutput.text } as typeof item) : item,
 	),
 	details: {
-		...(typeof result.details === "object" && result.details !== null ? result.details : {}),
+		...compactDetails,
 		ptcValue: builtOutput.ptcValue,
 	},
 };
