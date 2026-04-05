@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ToolRenderResultOptions, AgentToolResult } from "@mariozechner/pi-coding-agent";
 import {
 	createReadTool,
 	truncateHead,
@@ -20,6 +20,7 @@ import { formatFileMapWithBudget } from "./readmap/formatter.js";
 import { findSymbol, type SymbolMatch } from "./readmap/symbol-lookup.js";
 import { buildReadOutput } from "./read-output.js";
 import { buildLocalBundle } from "./read-local-bundle.js";
+import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 import { Text } from "@mariozechner/pi-tui";
 import { formatReadCallText, formatReadResultText } from "./read-render-helpers.js";
 
@@ -30,14 +31,18 @@ const READ_DESC = readFileSync(new URL("../prompts/read.md", import.meta.url), "
 
 interface ReadParams {
 	path: string;
-	offset?: number;
-	limit?: number;
+	offset?: number | string;
+	limit?: number | string;
 	symbol?: string;
 	map?: boolean;
 	bundle?: "local";
 }
 
-export function registerReadTool(pi: ExtensionAPI) {
+interface ReadToolOptions {
+	onSuccessfulRead?: (absolutePath: string) => void;
+}
+
+export function registerReadTool(pi: ExtensionAPI, options: ReadToolOptions = {}) {
 	const ptc = {
 		callable: true,
 		enabled: true,
@@ -53,8 +58,18 @@ export function registerReadTool(pi: ExtensionAPI) {
 		description: READ_DESC,
 		parameters: Type.Object({
 			path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
-			offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
-			limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+			offset: Type.Optional(
+				Type.Union([
+					Type.Number({ description: "Line number to start reading from (1-indexed)" }),
+					Type.String({ description: "Line number to start reading from (1-indexed)" }),
+				]),
+			),
+			limit: Type.Optional(
+				Type.Union([
+					Type.Number({ description: "Maximum number of lines to read" }),
+					Type.String({ description: "Maximum number of lines to read" }),
+				]),
+			),
 			symbol: Type.Optional(Type.String({ description: "Symbol to read (e.g., functionName or ClassName.methodName)" })),
 			map: Type.Optional(Type.Boolean({ description: "Append structural map to output (cannot combine with symbol)" })),
 			bundle: Type.Optional(
@@ -66,12 +81,39 @@ export function registerReadTool(pi: ExtensionAPI) {
 		ptc,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			await ensureHashInit();
-			const p = params as ReadParams;
+			const rawParams = params as ReadParams;
+			const offset = coerceObviousBase10Int(rawParams.offset, "offset");
+			if (!offset.ok) {
+				return {
+					content: [{ type: "text", text: offset.message }],
+					isError: true,
+					details: {},
+				};
+			}
+			const limit = coerceObviousBase10Int(rawParams.limit, "limit");
+			if (!limit.ok) {
+				return {
+					content: [{ type: "text", text: limit.message }],
+					isError: true,
+					details: {},
+				};
+			}
+			const p = {
+				...rawParams,
+				offset: offset.value,
+				limit: limit.value,
+			};
 			const rawPath = p.path.replace(/^@/, "");
 			const absolutePath = resolveToCwd(rawPath, ctx.cwd);
+			const succeed = <T extends AgentToolResult<any>>(result: T): T => {
+				const isError = (result as { isError?: boolean }).isError;
+				if (!isError) {
+					options.onSuccessfulRead?.(absolutePath);
+				}
+				return result;
+			};
 
 			throwIfAborted(signal);
-
 			if (p.symbol && (p.offset !== undefined || p.limit !== undefined)) {
 				return {
 					content: [{ type: "text", text: "Cannot combine symbol with offset/limit. Use one or the other." }],
@@ -79,7 +121,6 @@ export function registerReadTool(pi: ExtensionAPI) {
 					details: {},
 				};
 			}
-
 			if (p.bundle && !p.symbol) {
 				return {
 					content: [{ type: "text", text: 'Cannot use bundle without symbol. Use read({ path, symbol, bundle: "local" }).' }],
@@ -87,7 +128,6 @@ export function registerReadTool(pi: ExtensionAPI) {
 					details: {},
 				};
 			}
-
 			if (p.bundle && p.map) {
 				return {
 					content: [{ type: "text", text: "Cannot combine bundle with map. Use one or the other." }],
@@ -95,7 +135,6 @@ export function registerReadTool(pi: ExtensionAPI) {
 					details: {},
 				};
 			}
-
 			if (p.map && p.symbol) {
 				return {
 					content: [{ type: "text", text: "Cannot combine map with symbol. Use one or the other." }],
@@ -103,13 +142,12 @@ export function registerReadTool(pi: ExtensionAPI) {
 					details: {},
 				};
 			}
-
 			// Delegate images to the built-in read tool
 			throwIfAborted(signal);
 			const ext = rawPath.split(".").pop()?.toLowerCase() ?? "";
 			if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(ext)) {
 				const builtinRead = createReadTool(ctx.cwd);
-				return builtinRead.execute(_toolCallId, p, signal, _onUpdate);
+				return succeed(await builtinRead.execute(_toolCallId, p, signal, _onUpdate));
 			}
 
 			throwIfAborted(signal);
@@ -147,14 +185,12 @@ export function registerReadTool(pi: ExtensionAPI) {
 			}
 			const hasBinaryContent = looksLikeBinary(rawBuffer);
 			throwIfAborted(signal);
-
 			const normalized = normalizeToLF(stripBom(rawBuffer.toString("utf-8")).text);
 			const allLines = normalized.split("\n");
 			const total = allLines.length;
 			const structuredWarnings: PtcWarning[] = [];
-
-			let startLine = p.offset ? Math.max(1, p.offset) : 1;
-			let endIdx = p.limit ? Math.min(startLine - 1 + p.limit, total) : total;
+			let startLine = p.offset ? Math.max(1, Number(p.offset)) : 1;
+			let endIdx = p.limit ? Math.min(startLine - 1 + Number(p.limit), total) : total;
 			if (p.offset && startLine > total) {
 				return {
 					content: [{ type: "text", text: `[offset ${p.offset} is past end of file (${total} lines)]` }],
@@ -193,7 +229,7 @@ export function registerReadTool(pi: ExtensionAPI) {
 					if (lookup.type === "ambiguous") {
 						const lines = lookup.candidates.map((c) => `- ${c.name} (${c.kind}) — lines ${c.startLine}-${c.endLine}`);
 						const hints = lookup.candidates.map((c) => `${p.symbol}@${c.startLine}`).join(" or ");
-						return {
+						return succeed({
 							content: [
 								{
 									type: "text",
@@ -207,7 +243,7 @@ export function registerReadTool(pi: ExtensionAPI) {
 							],
 							isError: false,
 							details: {},
-						};
+						});
 					}
 					if (lookup.type === "not-found") {
 						const available = symbolFileMap.symbols
@@ -375,13 +411,13 @@ const readOutput = buildReadOutput({
 	...(bundleMetadata ? { bundle: bundleMetadata } : {}),
 });
 
-return {
+return succeed({
 	content: [{ type: "text", text: readOutput.text }],
 	details: {
 		truncation: truncation.truncated ? truncation : undefined,
 		ptcValue: readOutput.ptcValue,
 	},
-};
+});
 		},
 		renderCall(args: any, theme: any, ...rest: any[]) {
 			const _context = rest[0];

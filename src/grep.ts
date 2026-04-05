@@ -15,6 +15,7 @@ import { resolveToCwd } from "./path-utils";
 import { throwIfAborted } from "./runtime";
 import { Text } from "@mariozechner/pi-tui";
 import { formatGrepCallText, formatGrepResultText } from "./grep-render-helpers.js";
+import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 
 const GREP_PROMPT = readFileSync(new URL("../prompts/grep.md", import.meta.url), "utf-8").trim();
 const GREP_DESC = GREP_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? GREP_PROMPT;
@@ -25,8 +26,18 @@ const grepSchema = Type.Object({
 	glob: Type.Optional(Type.String({ description: "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'" })),
 	ignoreCase: Type.Optional(Type.Boolean({ description: "Case-insensitive search (default: false)" })),
 	literal: Type.Optional(Type.Boolean({ description: "Treat pattern as literal string instead of regex (default: false)" })),
-	context: Type.Optional(Type.Number({ description: "Number of lines to show before and after each match (default: 0)" })),
-	limit: Type.Optional(Type.Number({ description: "Maximum number of matches to return (default: 100)" })),
+	context: Type.Optional(
+		Type.Union([
+			Type.Number({ description: "Number of lines to show before and after each match (default: 0)" }),
+			Type.String({ description: "Number of lines to show before and after each match (default: 0)" }),
+		]),
+	),
+	limit: Type.Optional(
+		Type.Union([
+			Type.Number({ description: "Maximum number of matches to return (default: 100)" }),
+			Type.String({ description: "Maximum number of matches to return (default: 100)" }),
+		]),
+	),
 	summary: Type.Optional(Type.Boolean({ description: "Return per-file match counts only (no hashline anchors)" })),
 	scope: Type.Optional(
 		Type.Literal("symbol", {
@@ -41,8 +52,8 @@ interface GrepParams {
 	glob?: string;
 	ignoreCase?: boolean;
 	literal?: boolean;
-	context?: number;
-	limit?: number;
+	context?: number | string;
+	limit?: number | string;
 	summary?: boolean;
 	scope?: "symbol";
 }
@@ -276,9 +287,40 @@ export function registerGrepTool(pi: ExtensionAPI, options?: { astSearchGuidelin
 		promptGuidelines: options?.astSearchGuideline ? [options.astSearchGuideline] : undefined,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			await ensureHashInit();
-			const p = params as GrepParams;
+			const rawParams = params as GrepParams;
+			const context = coerceObviousBase10Int(rawParams.context, "context");
+			if (!context.ok) {
+				return {
+					content: [{ type: "text", text: context.message }],
+					isError: true,
+					details: {},
+				};
+			}
+
+			const limit = coerceObviousBase10Int(rawParams.limit, "limit");
+			if (!limit.ok) {
+				return {
+					content: [{ type: "text", text: limit.message }],
+					isError: true,
+					details: {},
+				};
+			}
+			const p: GrepParams = {
+				...rawParams,
+				context: context.value,
+				limit: limit.value,
+			};
 			const builtin = createGrepTool(ctx.cwd);
-			const result = await builtin.execute(toolCallId, p, signal, onUpdate);
+			const result = await builtin.execute(
+				toolCallId,
+				{
+					...p,
+					context: context.value,
+					limit: limit.value,
+				},
+				signal,
+				onUpdate,
+			);
 
 			const textBlock = result.content?.find(
 				(item): item is { type: "text"; text: string } =>
@@ -461,8 +503,8 @@ export function registerGrepTool(pi: ExtensionAPI, options?: { astSearchGuidelin
 				file.lines = deduplicateContext(file.lines);
 			}
 			const truncatedIR = truncateGrepIR(grepIR);
-			const { summary, limit } = p;
-			const effectiveLimit = limit ?? 100;
+			const summary = p.summary;
+			const effectiveLimit = typeof p.limit === "number" ? p.limit : 100;
 			const outputIR = summary
 				? {
 					...truncatedIR,
@@ -511,7 +553,7 @@ if (p.scope === "symbol" && !summary) {
 		groups: renderedGroups,
 		fileLinesByPath,
 		fileMapsByPath,
-		contextLines: p.context ?? 0,
+		contextLines: typeof p.context === "number" ? p.context : 0,
 	});
 
 	renderedGroups = scoped.groups;

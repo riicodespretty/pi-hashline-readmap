@@ -52,9 +52,13 @@ type HashlineParams = Static<typeof hashlineEditSchema>;
 
 const EDIT_DESC = readFileSync(new URL("../prompts/edit.md", import.meta.url), "utf-8").trim();
 
+export interface EditToolOptions {
+	wasReadInSession?: (absolutePath: string) => boolean;
+}
+
 // ─── Registration ───────────────────────────────────────────────────────
 
-export function registerEditTool(pi: ExtensionAPI) {
+export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}) {
 	const ptc = {
 		callable: true,
 		enabled: true,
@@ -63,7 +67,6 @@ export function registerEditTool(pi: ExtensionAPI) {
 		pythonName: "edit",
 		defaultExposure: "not-safe-by-default" as const,
 	};
-
 	const tool = {
 		name: "edit",
 		label: "Edit",
@@ -78,7 +81,19 @@ export function registerEditTool(pi: ExtensionAPI) {
 			const path = rawPath.replace(/^@/, "");
 			const absolutePath = resolveToCwd(path, ctx.cwd);
 			throwIfAborted(signal);
+			if (options.wasReadInSession && !options.wasReadInSession(absolutePath)) {
+				const message = [
+					`You must read ${absolutePath} before editing it.`,
+					`Call read(${JSON.stringify(rawPath)}) first.`,
+					"edit requires fresh LINE:HASH anchors from a recent read so the hashes match the current file contents.",
+				].join(" ");
 
+				return {
+					content: [{ type: "text", text: message }],
+					isError: true,
+					details: { diff: "", firstChangedLine: undefined } as EditToolDetails,
+				};
+			}
 			const legacyOldText =
 				typeof input.oldText === "string"
 					? input.oldText

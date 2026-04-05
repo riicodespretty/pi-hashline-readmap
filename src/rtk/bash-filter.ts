@@ -1,5 +1,4 @@
 import { stripAnsi } from "./ansi.ts";
-import * as testOutput from "./test-output.ts";
 import * as git from "./git.ts";
 import * as linter from "./linter.ts";
 import * as build from "./build.ts";
@@ -9,6 +8,7 @@ import * as fileListing from "./file-listing.ts";
 import * as httpClient from "./http-client.ts";
 import * as buildTools from "./build-tools.ts";
 import * as transfer from "./transfer.ts";
+import { getBashAntiPatternHint } from "./bash-anti-pattern-hints.ts";
 
 export interface FilterResult {
   output: string;
@@ -44,7 +44,6 @@ export function filterBashOutput(command: string, output: string): FilterResult 
 
   const stripped = stripAnsi(output);
 
-  // Test commands are never compressed — agents need full failure output
   if (isTestCommand(command)) {
     return { output: stripped, savedChars: output.length - stripped.length };
   }
@@ -76,6 +75,11 @@ export function filterBashOutput(command: string, output: string): FilterResult 
     }
   } catch {
     result = stripped;
+  }
+
+  const antiPatternHint = getBashAntiPatternHint(command);
+  if (antiPatternHint) {
+    result = result ? `${result}\n\n${antiPatternHint}` : antiPatternHint;
   }
 
   return {
