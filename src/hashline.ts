@@ -512,8 +512,13 @@ export function applyHashlineEdits(
 	// Recompute after potential relocation
 	explicitlyTouchedLines = collectExplicitlyTouchedLines();
 
-	// Deduplicate identical edits
-	const seen = new Map<string, number>();
+	// Detect conflicting duplicate single-target edits and deduplicate identical edits.
+	// For single-target edits, keep the last identical occurrence so resolution remains last-wins.
+	const duplicateTargetWarnings: string[] = [];
+	const warnedSingleTargets = new Set<string>();
+	const seenSingleTargets = new Map<string, string>();
+	const seenSingleEditByKey = new Map<string, number>();
+	const seenNonSingleEditByKey = new Map<string, number>();
 	const dupes = new Set<number>();
 	for (let i = 0; i < parsed.length; i++) {
 		throwIfAborted(signal);
@@ -524,9 +529,27 @@ export function applyHashlineEdits(
 				: p.spec.kind === "range"
 					? `r:${p.spec.start.line}:${p.spec.end.line}`
 					: `i:${p.spec.after.line}`;
-		const key = `${lk}|${p.dstLines.join("\n")}`;
-		if (seen.has(key)) dupes.add(i);
-		else seen.set(key, i);
+		const dstKey = p.dstLines.join("\n");
+		const key = `${lk}|${dstKey}`;
+		if (p.spec.kind === "single") {
+			const previousIdx = seenSingleEditByKey.get(key);
+			if (previousIdx !== undefined) dupes.add(previousIdx);
+			seenSingleEditByKey.set(key, i);
+			const previousDstKey = seenSingleTargets.get(lk);
+			if (previousDstKey !== undefined && previousDstKey !== dstKey && !warnedSingleTargets.has(lk)) {
+				duplicateTargetWarnings.push(
+					`Warning: multiple edits target the same anchor ${p.spec.ref.line}:${p.spec.ref.hash} — only the last will apply`,
+				);
+				warnedSingleTargets.add(lk);
+			}
+			seenSingleTargets.set(lk, dstKey);
+			continue;
+		}
+		if (seenNonSingleEditByKey.has(key)) {
+			dupes.add(i);
+		} else {
+			seenNonSingleEditByKey.set(key, i);
+		}
 	}
 	const deduped = parsed.filter((_, i) => !dupes.has(i));
 
@@ -653,7 +676,7 @@ export function applyHashlineEdits(
 		}
 	}
 
-	const warnings: string[] = [...relocationNotes];
+	const warnings: string[] = [...relocationNotes, ...duplicateTargetWarnings];
 	let diff = Math.abs(fileLines.length - origLines.length);
 	for (let i = 0; i < Math.min(fileLines.length, origLines.length); i++) {
 		if (fileLines[i] !== origLines[i]) diff++;
