@@ -58,10 +58,10 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
     ? 'Use `ast_search` for structural code patterns (function calls, imports, JSX). Use `grep` for text matching.'
     : 'For AST-aware structural code search (function calls, imports, JSX elements), install ast-grep: `brew install ast-grep`';
 
-  const grepTool = registerGrepTool(pi, { astSearchGuideline });
-  const sgTool = registerSgTool(pi);
+  const grepTool = registerGrepTool(pi, { astSearchGuideline, onFileAnchored: noteRead });
+  const sgTool = registerSgTool(pi, { onFileAnchored: noteRead });
   registerNuTool(pi);
-  const writeTool = registerWriteTool(pi);
+  const writeTool = registerWriteTool(pi, { onFileAnchored: noteRead });
   registerLsTool(pi);
   registerFindTool(pi);
 

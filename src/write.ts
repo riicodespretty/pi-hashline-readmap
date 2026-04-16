@@ -1,8 +1,9 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative } from "node:path";
+import { resolveToCwd } from "./path-utils.js";
 import { ensureHashInit, formatHashlineDisplay } from "./hashline.js";
 import { buildPtcLine, buildPtcWarning, type PtcLine, type PtcWarning } from "./ptc-value.js";
 import { looksLikeBinary } from "./binary-detect.js";
@@ -11,6 +12,8 @@ import { formatFileMapWithBudget } from "./readmap/formatter.js";
 
 const MAX_LINES = 2000;
 const MAX_BYTES = 50 * 1024;
+const WRITE_PROMPT = readFileSync(new URL("../prompts/write.md", import.meta.url), "utf-8").trim();
+const WRITE_DESC = WRITE_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? WRITE_PROMPT;
 
 export interface WriteResult {
   text: string;
@@ -22,6 +25,10 @@ export interface WriteResult {
     warnings: PtcWarning[];
     map?: { appended: boolean };
   };
+}
+
+export interface WriteToolOptions {
+  onFileAnchored?: (absolutePath: string) => void;
 }
 
 export async function executeWrite(opts: {
@@ -72,16 +79,14 @@ export async function executeWrite(opts: {
   }
 
   let text = displayLines.join("\n");
-
-  // Truncation
   if (rawLines.length > MAX_LINES) {
     text = displayLines.slice(0, MAX_LINES).join("\n");
-    text += `\n[… ${rawLines.length - MAX_LINES} more lines truncated]`;
+    text += `\n[… ${rawLines.length - MAX_LINES} more lines not shown — full anchors in ptcValue]`;
   }
   const bytes = Buffer.byteLength(text, "utf8");
   if (bytes > MAX_BYTES) {
     text = Buffer.from(text, "utf8").subarray(0, MAX_BYTES).toString("utf8");
-    text += "\n[… truncated at 50 KB]";
+    text += "\n[… output truncated at 50 KB — full anchors in ptcValue]";
   }
 
   // Optional structural map
@@ -116,25 +121,29 @@ export async function executeWrite(opts: {
   };
 }
 
-export function registerWriteTool(pi: ExtensionAPI) {
+export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = {}) {
   const tool = {
     name: "write",
     label: "write",
-    description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories. Returns hashlined content with LINE:HASH anchors for immediate use with edit.",
+    description: WRITE_DESC,
     parameters: Type.Object({
       path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
       content: Type.String({ description: "Content to write to the file" }),
       map: Type.Optional(Type.Boolean({ description: "Append structural map to output" })),
     }),
-
     async execute(_toolCallId: string, params: { path: string; content: string; map?: boolean }, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
+      const cwd = ctx?.cwd ?? process.cwd();
+      const absolutePath = resolveToCwd(params.path, cwd);
       const result = await executeWrite({
-        path: params.path,
+        path: absolutePath,
         content: params.content,
         map: params.map,
-        cwd: ctx?.cwd,
+        cwd,
       });
 
+      if (result.ptcValue.lines.length > 0) {
+        options.onFileAnchored?.(absolutePath);
+      }
       return {
         content: [{ type: "text" as const, text: result.text }],
         details: {
@@ -143,13 +152,11 @@ export function registerWriteTool(pi: ExtensionAPI) {
         },
       };
     },
-
     renderCall(args: any, theme: any) {
       const { path } = args as { path: string };
       const label = theme.fg("toolTitle", "✏️ write");
       return new Text(`${label} ${theme.fg("muted", path)}`, 0, 0);
     },
-
     renderResult(result: any, _options: any, theme: any) {
       const output = result.content[0]?.type === "text"
         ? (result.content[0] as { type: "text"; text: string }).text
@@ -159,7 +166,6 @@ export function registerWriteTool(pi: ExtensionAPI) {
       return new Text(theme.fg("toolOutput", summary), 0, 0);
     },
   };
-
   pi.registerTool(tool);
   return tool;
 }

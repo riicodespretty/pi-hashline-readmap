@@ -10,7 +10,7 @@ function getTextContent(result: any): string {
 }
 
 describe("edit read-before-edit guard", () => {
-  it("returns a soft error when the file was not read in this session", async () => {
+  it("returns a soft error when the file has no fresh anchor source in this session", async () => {
     await ensureHashInit();
 
     const dir = mkdtempSync(resolve(tmpdir(), "pi-edit-unread-"));
@@ -45,10 +45,10 @@ describe("edit read-before-edit guard", () => {
 
     const text = getTextContent(result);
     expect(result.isError).toBe(true);
-    expect(text).toContain(`You must read ${filePath} before editing it.`);
-    expect(text).toContain(`Call read(${JSON.stringify(filePath)}) first.`);
+    expect(text).toContain(`You must get fresh anchors for ${filePath} before editing it.`);
+    expect(text).toContain("read, grep, ast_search, or write");
     expect(text).toContain(
-      "edit requires fresh LINE:HASH anchors from a recent read so the hashes match the current file contents.",
+      "edit requires fresh LINE:HASH anchors from read, grep, ast_search, or write so the hashes match the current file contents.",
     );
     expect(readFileSync(filePath, "utf-8")).toBe("const value = 1;\n");
   });

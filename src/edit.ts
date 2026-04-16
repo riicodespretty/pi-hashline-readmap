@@ -83,11 +83,10 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			throwIfAborted(signal);
 			if (options.wasReadInSession && !options.wasReadInSession(absolutePath)) {
 				const message = [
-					`You must read ${absolutePath} before editing it.`,
-					`Call read(${JSON.stringify(rawPath)}) first.`,
-					"edit requires fresh LINE:HASH anchors from a recent read so the hashes match the current file contents.",
+					`You must get fresh anchors for ${absolutePath} before editing it.`,
+					`Call read(${JSON.stringify(rawPath)}) first, or use grep, ast_search, or write to produce fresh anchors for this file.`,
+					"edit requires fresh LINE:HASH anchors from read, grep, ast_search, or write so the hashes match the current file contents.",
 				].join(" ");
-
 				return {
 					content: [{ type: "text", text: message }],
 					isError: true,
