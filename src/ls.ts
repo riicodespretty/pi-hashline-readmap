@@ -1,11 +1,15 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
+import { readFileSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { resolveToCwd } from "./path-utils.js";
 
 const MAX_BYTES = 50 * 1024; // 50 KB
 const DEFAULT_LIMIT = 500;
+
+const LS_PROMPT = readFileSync(new URL("../prompts/ls.md", import.meta.url), "utf-8").trim();
+const LS_DESC = LS_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? LS_PROMPT;
 
 export interface LsEntry {
   name: string;
@@ -56,7 +60,7 @@ export function registerLsTool(pi: ExtensionAPI) {
   const tool = {
     name: "ls",
     label: "ls",
-    description: "List directory contents. Shows directories first (with `/` suffix), then files, sorted alphabetically. Returns structured metadata for programmatic use.",
+    description: LS_DESC,
     parameters: Type.Object({
       path: Type.Optional(Type.String({ description: "Directory to list (default: cwd)" })),
       limit: Type.Optional(Type.Number({ description: "Max entries to return (default: 500)" })),

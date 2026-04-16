@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
+import { readFileSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { execFileSync, execFile } from "node:child_process";
 import { resolve, relative, join } from "node:path";
@@ -8,6 +9,8 @@ import { resolveToCwd } from "./path-utils.js";
 
 const MAX_BYTES = 50 * 1024; // 50 KB
 const DEFAULT_LIMIT = 1000;
+const FIND_PROMPT = readFileSync(new URL("../prompts/find.md", import.meta.url), "utf-8").trim();
+const FIND_DESC = FIND_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? FIND_PROMPT;
 
 
 export interface FindEntry {
@@ -237,7 +240,7 @@ export function registerFindTool(pi: ExtensionAPI) {
   const tool = {
     name: "find",
     label: "find",
-    description: "Find files recursively matching a glob pattern. Respects .gitignore, includes hidden files, returns sorted relative paths with structured metadata.",
+    description: FIND_DESC,
     parameters: Type.Object(
       {
         pattern: Type.String({ description: "Glob pattern (e.g. '*.ts', '*.test.ts')" }),

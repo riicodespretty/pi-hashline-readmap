@@ -268,7 +268,12 @@ function escapeForRegex(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function registerGrepTool(pi: ExtensionAPI, options?: { astSearchGuideline?: string }) {
+interface GrepToolOptions {
+	astSearchGuideline?: string;
+	onFileAnchored?: (absolutePath: string) => void;
+}
+
+export function registerGrepTool(pi: ExtensionAPI, options: GrepToolOptions = {}) {
 	const ptc = {
 		callable: true,
 		enabled: true,
@@ -284,7 +289,7 @@ export function registerGrepTool(pi: ExtensionAPI, options?: { astSearchGuidelin
 		description: GREP_DESC,
 		parameters: grepSchema,
 		ptc,
-		promptGuidelines: options?.astSearchGuideline ? [options.astSearchGuideline] : undefined,
+		promptGuidelines: options.astSearchGuideline ? [options.astSearchGuideline] : undefined,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			await ensureHashInit();
 			const rawParams = params as GrepParams;
@@ -592,21 +597,28 @@ if (p.scope === "symbol" && !summary) {
 				passthroughLines,
 			});
 
-const existingDetails =
-	typeof result.details === "object" && result.details !== null
-		? (result.details as Record<string, unknown>)
-		: {};
-const { linesTruncated: _ignoredLinesTruncated, truncation: _ignoredTruncation, ...compactDetails } = existingDetails;
-return {
-	...result,
-	content: result.content.map((item) =>
-		item === textBlock ? ({ ...item, text: builtOutput.text } as typeof item) : item,
-	),
-	details: {
-		...compactDetails,
-		ptcValue: builtOutput.ptcValue,
-	},
-};
+			if (!summary && ptcRecords.length > 0) {
+				const anchoredPaths = new Set(ptcRecords.map((record) => record.path));
+				for (const absolutePath of anchoredPaths) {
+					options.onFileAnchored?.(absolutePath);
+				}
+			}
+
+			const existingDetails =
+				typeof result.details === "object" && result.details !== null
+					? (result.details as Record<string, unknown>)
+					: {};
+			const { linesTruncated: _ignoredLinesTruncated, truncation: _ignoredTruncation, ...compactDetails } = existingDetails;
+			return {
+				...result,
+				content: result.content.map((item) =>
+					item === textBlock ? ({ ...item, text: builtOutput.text } as typeof item) : item,
+				),
+				details: {
+					...compactDetails,
+					ptcValue: builtOutput.ptcValue,
+				},
+			};
 		},
 		renderCall(args: any, theme: any, ...rest: any[]) {
 			const _context = rest[0];

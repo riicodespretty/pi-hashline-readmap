@@ -82,7 +82,11 @@ export function isSgAvailable(): boolean {
   }
 }
 
-export function registerSgTool(pi: ExtensionAPI) {
+interface SgToolOptions {
+  onFileAnchored?: (absolutePath: string) => void;
+}
+
+export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
   const ptc = {
     callable: true,
     enabled: true,
@@ -206,6 +210,11 @@ export function registerSgTool(pi: ExtensionAPI) {
           pattern: p.pattern,
           files: ptcFiles,
         });
+        for (const ptcFile of ptcFiles) {
+          if (ptcFile.lines.length > 0) {
+            options.onFileAnchored?.(ptcFile.path);
+          }
+        }
         return {
           content: [{ type: "text", text: builtOutput.text }],
           details: {
