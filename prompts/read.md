@@ -44,8 +44,9 @@ Use the `symbol` parameter to read a specific symbol by name — no line numbers
 
 **Behavior by result:**
 
-- **Found:** Returns hashlined content for the symbol's line range only, prepended with `[Symbol: name (kind), lines X-Y of Z]`.
+- **Found (exact / case-insensitive / prefix):** Returns hashlined content for the symbol's line range only, prepended with `[Symbol: name (kind), lines X-Y of Z]`. Silent — no banner.
 - **Ambiguous (multiple matches):** Returns a disambiguation list with each candidate's name, kind, and line range. Use dot notation (e.g., `ClassName.methodName`) to narrow the match.
+- **Fuzzy (low-confidence match):** Returns the best match's content prefixed with a `[Symbol '<query>' not exact-matched ...]` banner that names the matched symbol, the match tier (`camelCase word boundary` or `substring`), up to 4 other candidates, and a `read({ symbol: "..." })` / `name@line` confirmation hint. Content is still returned so no extra round-trip is required when the guess is right, but the banner is a required signal that the match was approximate — re-verify before editing based on it.
 - **Not found:** Falls back to a normal read with a warning listing up to 20 available symbol names.
 - **Unmappable file:** Falls back to a normal read with a warning noting the file type doesn't support symbol lookup.
 
