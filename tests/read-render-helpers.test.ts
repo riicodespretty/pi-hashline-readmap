@@ -107,6 +107,18 @@ describe("formatReadResultText", () => {
     expect(result.badges).toContain("⚠ bare CR");
   });
 
+  it("adds a fuzzy match badge when warnings include fuzzy-symbol-match", () => {
+    const out = formatReadResultText({
+      range: { startLine: 42, endLine: 58, totalLines: 100 },
+      truncation: null,
+      symbol: { query: "get", name: "initGetters", kind: "function", startLine: 42, endLine: 58 },
+      map: { requested: false, appended: false },
+      warnings: [{ code: "fuzzy-symbol-match", message: "[Symbol 'get' not exact-matched...]" }],
+    });
+
+    expect(out.badges).toContain("⚠ fuzzy match");
+  });
+
   it("shows truncation in summary", () => {
     const result = formatReadResultText({
       range: { startLine: 1, endLine: 2000, totalLines: 5000 },

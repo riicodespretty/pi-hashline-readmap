@@ -91,6 +91,7 @@ export function formatReadResultText(input: ReadResultTextInput): ReadResultText
   for (const w of warnings) {
     if (w.code === "binary-content") badges.push("\u26a0 binary");
     if (w.code === "bare-cr") badges.push("\u26a0 bare CR");
+    if (w.code === "fuzzy-symbol-match") badges.push("⚠ fuzzy match");
   }
 
   return {

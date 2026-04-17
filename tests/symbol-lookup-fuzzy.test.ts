@@ -53,16 +53,96 @@ describe("findSymbol ranked fuzzy matching (task 7)", () => {
     });
   });
 
-  it("camelCase boundary match: config matches parseConfig", () => {
+  it("prefix beats a camelCase candidate for the same query", () => {
+    const map = makeMap([
+      { name: "handlerConfig", kind: SymbolKind.Function, startLine: 1, endLine: 2 },
+      { name: "getHandler", kind: SymbolKind.Function, startLine: 3, endLine: 4 },
+    ]);
+
+    expect(findSymbol(map, "handler")).toEqual({
+      type: "found",
+      symbol: { name: "handlerConfig", kind: "function", startLine: 1, endLine: 2 },
+    });
+  });
+
+  it("multiple camelCase matches stay ambiguous before substring fallback", () => {
+    const map = makeMap([
+      { name: "getHandler", kind: SymbolKind.Function, startLine: 10, endLine: 20 },
+      { name: "setHandler", kind: SymbolKind.Function, startLine: 30, endLine: 40 },
+      { name: "myhandlerthing", kind: SymbolKind.Function, startLine: 50, endLine: 60 },
+    ]);
+
+    expect(findSymbol(map, "handler")).toEqual({
+      type: "ambiguous",
+      candidates: [
+        { name: "getHandler", kind: "function", startLine: 10, endLine: 20 },
+        { name: "setHandler", kind: "function", startLine: 30, endLine: 40 },
+      ],
+    });
+  });
+
+  it("camelCase boundary match: config matches parseConfig returns fuzzy", () => {
     const map = makeMap([
       { name: "parseConfig", kind: SymbolKind.Function, startLine: 1, endLine: 2 },
       { name: "myconfigvalue", kind: SymbolKind.Function, startLine: 3, endLine: 4 },
     ]);
 
-    expect(findSymbol(map, "config")).toEqual({
-      type: "found",
-      symbol: { name: "parseConfig", kind: "function", startLine: 1, endLine: 2 },
-    });
+    const result = findSymbol(map, "config");
+    expect(result.type).toBe("fuzzy");
+    if (result.type === "fuzzy") {
+      expect(result.symbol).toEqual({ name: "parseConfig", kind: "function", startLine: 1, endLine: 2 });
+      expect(result.tier).toBe("camelCase");
+      expect(Array.isArray(result.otherCandidates)).toBe(true);
+    }
+  });
+
+  it("substring match: single tier-4 hit returns fuzzy with tier substring", () => {
+    const map = makeMap([
+      { name: "initGetters", kind: SymbolKind.Function, startLine: 42, endLine: 58 },
+      { name: "formatOutput", kind: SymbolKind.Function, startLine: 60, endLine: 70 },
+    ]);
+
+    const result = findSymbol(map, "get");
+    expect(result.type).toBe("fuzzy");
+    if (result.type === "fuzzy") {
+      expect(result.symbol).toEqual({ name: "initGetters", kind: "function", startLine: 42, endLine: 58 });
+      expect(result.tier).toBe("substring");
+    }
+  });
+
+  it("fuzzy tier 3 (camelCase) returns up to 4 other candidates from merged tier-3+tier-4 pool", () => {
+    const map = makeMap([
+      { name: "getHandler", kind: SymbolKind.Function, startLine: 10, endLine: 20 },
+      { name: "myhandlerthing", kind: SymbolKind.Function, startLine: 30, endLine: 35 },
+      { name: "prehandlerX", kind: SymbolKind.Function, startLine: 40, endLine: 45 },
+      { name: "ahandlerB", kind: SymbolKind.Function, startLine: 50, endLine: 55 },
+      { name: "xhandlerY", kind: SymbolKind.Function, startLine: 60, endLine: 65 },
+      { name: "zhandlerQ", kind: SymbolKind.Function, startLine: 70, endLine: 75 },
+    ]);
+
+    const result = findSymbol(map, "handler");
+    expect(result.type).toBe("fuzzy");
+    if (result.type === "fuzzy") {
+      expect(result.symbol.name).toBe("getHandler");
+      expect(result.tier).toBe("camelCase");
+      expect(result.otherCandidates.length).toBeLessThanOrEqual(4);
+      expect(result.otherCandidates.length).toBeGreaterThan(0);
+      expect(result.otherCandidates.every((c) => c.name !== "getHandler")).toBe(true);
+    }
+  });
+
+  it("fuzzy tier 4 with a single overall substring hit returns empty otherCandidates", () => {
+    const map = makeMap([
+      { name: "initGetters", kind: SymbolKind.Function, startLine: 42, endLine: 58 },
+      { name: "formatOutput", kind: SymbolKind.Function, startLine: 60, endLine: 70 },
+    ]);
+
+    const result = findSymbol(map, "get");
+    expect(result.type).toBe("fuzzy");
+    if (result.type === "fuzzy") {
+      expect(result.tier).toBe("substring");
+      expect(result.otherCandidates).toEqual([]);
+    }
   });
 
   it("ambiguity returns at most 5 candidates", () => {

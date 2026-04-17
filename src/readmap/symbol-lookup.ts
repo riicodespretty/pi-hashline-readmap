@@ -12,6 +12,12 @@ export interface SymbolMatch {
 export type SymbolLookupResult =
   | { type: "found"; symbol: SymbolMatch }
   | { type: "ambiguous"; candidates: SymbolMatch[] }
+  | {
+      type: "fuzzy";
+      symbol: SymbolMatch;
+      tier: "camelCase" | "substring";
+      otherCandidates: SymbolMatch[];
+    }
   | { type: "not-found" };
 
 function toMatch(symbol: FileSymbol, parentName?: string): SymbolMatch {
@@ -127,12 +133,37 @@ export function findSymbol(map: FileMap, query: string): SymbolLookupResult {
     const words = c.symbol.name.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().split(/[\s_]+/);
     return words.some((w) => w === qLower);
   });
-  if (camelCase.length === 1) return { type: "found", symbol: toMatch(camelCase[0].symbol, camelCase[0].parentName) };
-  if (camelCase.length > 1) return { type: "ambiguous", candidates: toMatches(camelCase.slice(0, 5)) };
 
   // Tier 4: substring match
   const partial = allSymbols.filter((c) => c.symbol.name.toLowerCase().includes(qLower));
-  if (partial.length === 1) return { type: "found", symbol: toMatch(partial[0].symbol, partial[0].parentName) };
+  const buildOtherCandidates = (chosen: SymbolCandidate): SymbolMatch[] => {
+    const pool: SymbolCandidate[] = [];
+    const seen = new Set<FileSymbol>();
+    seen.add(chosen.symbol);
+    for (const c of [...camelCase, ...partial]) {
+      if (seen.has(c.symbol)) continue;
+      seen.add(c.symbol);
+      pool.push(c);
+    }
+    return toMatches(pool.slice(0, 4));
+  };
+  if (camelCase.length === 1) {
+    return {
+      type: "fuzzy",
+      symbol: toMatch(camelCase[0].symbol, camelCase[0].parentName),
+      tier: "camelCase",
+      otherCandidates: buildOtherCandidates(camelCase[0]),
+    };
+  }
+  if (camelCase.length > 1) return { type: "ambiguous", candidates: toMatches(camelCase.slice(0, 5)) };
+  if (partial.length === 1) {
+    return {
+      type: "fuzzy",
+      symbol: toMatch(partial[0].symbol, partial[0].parentName),
+      tier: "substring",
+      otherCandidates: buildOtherCandidates(partial[0]),
+    };
+  }
   if (partial.length > 1) return { type: "ambiguous", candidates: toMatches(partial.slice(0, 5)) };
 
   return { type: "not-found" };

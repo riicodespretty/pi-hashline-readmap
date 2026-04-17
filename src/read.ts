@@ -271,6 +271,28 @@ export function registerReadTool(pi: ExtensionAPI, options: ReadToolOptions = {}
 						endIdx = Math.min(total, lookup.symbol.endLine);
 						symbolMatch = lookup.symbol;
 					}
+					if (lookup.type === "fuzzy") {
+						startLine = Math.max(1, lookup.symbol.startLine);
+						endIdx = Math.min(total, lookup.symbol.endLine);
+						symbolMatch = lookup.symbol;
+
+						const tierLabel = lookup.tier === "camelCase" ? "camelCase word boundary" : "substring";
+						const otherNames = lookup.otherCandidates.map((c) => `\`${c.name}\``).join(", ");
+						const confirmHint = `read({ symbol: "${lookup.symbol.name}" }) or ${lookup.symbol.name}@${lookup.symbol.startLine} to select by start line`;
+						const lines = [
+							`[Symbol '${p.symbol}' not exact-matched. Closest match: \`${lookup.symbol.name}\` (${lookup.symbol.kind}, lines ${lookup.symbol.startLine}-${lookup.symbol.endLine}) via ${tierLabel}.`,
+						];
+						if (otherNames) lines.push(` Other candidates: ${otherNames}.`);
+						lines.push(` To confirm: ${confirmHint}.]`);
+						const bannerText = lines.join("\n");
+						structuredWarnings.push(
+							buildPtcWarning("fuzzy-symbol-match", bannerText, {
+								tier: lookup.tier,
+								symbol: lookup.symbol,
+								otherCandidates: lookup.otherCandidates,
+							}),
+						);
+					}
 				}
 			}
 
@@ -471,7 +493,7 @@ return succeed({
 			const ptcValue = (result.details as any)?.ptcValue as {
 				tool: "read";
 				range: { startLine: number; endLine: number; totalLines: number };
-				warnings: Array<{ code: string; message: string }>;
+				warnings: PtcWarning[];
 				truncation: { outputLines: number; totalLines: number; outputBytes: number; totalBytes: number } | null;
 				symbol: { query: string; name: string; kind: string; parentName?: string; startLine: number; endLine: number } | null;
 				map: { requested: boolean; appended: boolean };

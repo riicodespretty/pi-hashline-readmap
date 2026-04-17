@@ -8,9 +8,19 @@ export interface PtcLine {
   display: string;
 }
 
+export interface PtcWarningSymbol {
+  name: string;
+  kind: string;
+  startLine: number;
+  endLine: number;
+  parentName?: string;
+}
 export interface PtcWarning {
   code: string;
   message: string;
+  tier?: "camelCase" | "substring";
+  symbol?: PtcWarningSymbol;
+  otherCandidates?: PtcWarningSymbol[];
 }
 
 export interface PtcRange {
@@ -65,8 +75,12 @@ export function renderPtcLines(lines: PtcLine[]): string {
   return lines.map(renderPtcLine).join("\n");
 }
 
-export function buildPtcWarning(code: string, message: string): PtcWarning {
-  return { code, message };
+export function buildPtcWarning(
+  code: string,
+  message: string,
+  metadata: Omit<PtcWarning, "code" | "message"> = {},
+): PtcWarning {
+  return { code, message, ...metadata };
 }
 
 export function buildPtcRange(startLine: number, endLine: number, totalLines?: number): PtcRange {
