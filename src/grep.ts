@@ -44,6 +44,12 @@ const grepSchema = Type.Object({
 			description: 'Scope matches to enclosing symbol blocks. Only "symbol" is defined, and it is ignored when summary: true.',
 		}),
 	),
+	scopeContext: Type.Optional(
+		Type.Union([
+			Type.Number({ description: "Context lines within symbol scope (requires scope: \"symbol\"). 0 = match lines only." }),
+			Type.String({ description: "Context lines within symbol scope (requires scope: \"symbol\"). 0 = match lines only." }),
+		]),
+	),
 });
 
 interface GrepParams {
@@ -56,6 +62,7 @@ interface GrepParams {
 	limit?: number | string;
 	summary?: boolean;
 	scope?: "symbol";
+	scopeContext?: number | string;
 }
 
 const MATCH_LINE_RE = /^(.*):(\d+): (.*)$/;
@@ -310,10 +317,39 @@ export function registerGrepTool(pi: ExtensionAPI, options: GrepToolOptions = {}
 					details: {},
 				};
 			}
+
+			const scopeContext = coerceObviousBase10Int(rawParams.scopeContext, "scopeContext");
+			if (!scopeContext.ok) {
+				return {
+					content: [{ type: "text", text: scopeContext.message }],
+					isError: true,
+					details: {},
+				};
+			}
+
+			if (scopeContext.value !== undefined && rawParams.scope !== "symbol") {
+				return {
+					content: [{
+						type: "text",
+						text: 'Invalid scopeContext: requires scope: "symbol". For normal surrounding-line context outside symbol scope, use the `context` parameter.',
+					}],
+					isError: true,
+					details: {},
+				};
+			}
+
+			if (scopeContext.value !== undefined && scopeContext.value < 0) {
+				return {
+					content: [{ type: "text", text: `Invalid scopeContext: expected a non-negative integer, received ${scopeContext.value}.` }],
+					isError: true,
+					details: {},
+				};
+			}
 			const p: GrepParams = {
 				...rawParams,
 				context: context.value,
 				limit: limit.value,
+				scopeContext: scopeContext.value,
 			};
 			const builtin = createGrepTool(ctx.cwd);
 			const result = await builtin.execute(
@@ -564,6 +600,7 @@ if (p.scope === "symbol" && !summary) {
 		fileLinesByPath,
 		fileMapsByPath,
 		contextLines: typeof p.context === "number" ? p.context : 0,
+		scopeContext: typeof p.scopeContext === "number" ? p.scopeContext : undefined,
 	});
 
 	renderedGroups = scoped.groups;

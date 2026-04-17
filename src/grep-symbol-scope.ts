@@ -40,11 +40,42 @@ function firstLineNumber(group: GrepOutputGroup): number {
   return first ? first.line.line : Number.MAX_SAFE_INTEGER;
 }
 
-function buildSymbolEntries(fileLines: string[], symbol: GrepOutputScopeSymbol, matchLines: Set<number>): GrepOutputEntry[] {
+function buildSymbolEntries(
+  fileLines: string[],
+  symbol: GrepOutputScopeSymbol,
+  matchLines: Set<number>,
+  scopeContext: number | undefined,
+): GrepOutputEntry[] {
+  if (scopeContext === undefined) {
+    const entries: GrepOutputEntry[] = [];
+    for (let lineNumber = symbol.startLine; lineNumber <= symbol.endLine; lineNumber++) {
+      const built = buildPtcLine(lineNumber, fileLines[lineNumber - 1] ?? "");
+      entries.push({ kind: matchLines.has(lineNumber) ? "match" : "context", line: built });
+    }
+    return entries;
+  }
+  // Windowed path: ±scopeContext lines, clipped, merged, with '--' separators between non-overlapping ranges.
+  const ranges = [...matchLines].sort((a, b) => a - b).map((ln) => ({
+    startLine: Math.max(symbol.startLine, ln - scopeContext),
+    endLine: Math.min(symbol.endLine, ln + scopeContext),
+  }));
+  const merged: Array<{ startLine: number; endLine: number }> = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r.startLine <= last.endLine + 1) {
+      last.endLine = Math.max(last.endLine, r.endLine);
+    } else {
+      merged.push({ ...r });
+    }
+  }
   const entries: GrepOutputEntry[] = [];
-  for (let lineNumber = symbol.startLine; lineNumber <= symbol.endLine; lineNumber++) {
-    const built = buildPtcLine(lineNumber, fileLines[lineNumber - 1] ?? "");
-    entries.push({ kind: matchLines.has(lineNumber) ? "match" : "context", line: built });
+  for (let i = 0; i < merged.length; i++) {
+    if (i > 0) entries.push({ kind: "separator", text: "--" });
+    const range = merged[i];
+    for (let ln = range.startLine; ln <= range.endLine; ln++) {
+      const built = buildPtcLine(ln, fileLines[ln - 1] ?? "");
+      entries.push({ kind: matchLines.has(ln) ? "match" : "context", line: built });
+    }
   }
   return entries;
 }
@@ -77,6 +108,7 @@ export function scopeGrepGroupsToSymbols(input: {
   fileLinesByPath: Map<string, string[]>;
   fileMapsByPath: Map<string, FileMap | null>;
   contextLines: number;
+  scopeContext?: number;
 }): { groups: GrepOutputGroup[]; warnings: GrepScopeWarning[] } {
   const warnings: GrepScopeWarning[] = [];
   const rendered: Array<{ order: number; group: GrepOutputGroup }> = [];
@@ -131,8 +163,9 @@ export function scopeGrepGroupsToSymbols(input: {
           mode: "symbol" as const,
           symbol,
           matchLines: [...matchLines].sort((a, b) => a - b),
+          ...(input.scopeContext !== undefined ? { contextLines: input.scopeContext } : {}),
         },
-        entries: buildSymbolEntries(fileLines, symbol, matchLines),
+        entries: buildSymbolEntries(fileLines, symbol, matchLines, input.scopeContext),
       }));
 
     for (const scopedGroup of scopedGroups) rendered.push({ order: scopedGroup.scope!.symbol.startLine, group: scopedGroup });

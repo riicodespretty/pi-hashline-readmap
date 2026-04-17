@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { ensureHashInit, computeLineHash, escapeControlCharsForDisplay } from "../src/hashline.js";
 import * as grepModule from "../src/grep.js";
 import * as grepOutputModule from "../src/grep-output.js";
+import { buildGrepOutput } from "../src/grep-output.js";
+import { buildPtcLine } from "../src/ptc-value.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = resolve(__dirname, "fixtures");
@@ -81,5 +83,80 @@ describe("buildGrepOutput", () => {
     expect(built.text).toContain(`${filePath}: 60 matches`);
     expect(getTextContent(result)).toBe(built.text);
     expect(result.details?.ptcValue).toEqual(built.ptcValue);
+  });
+
+  it("appends 'scoped to ±N lines' to the symbol header when scope.contextLines is set", async () => {
+    const line3 = buildPtcLine(3, "  const x = 1;");
+    const out = buildGrepOutput({
+      summary: false,
+      totalMatches: 1,
+      groups: [
+        {
+          displayPath: "foo.ts",
+          absolutePath: "/tmp/foo.ts",
+          matchCount: 1,
+          entries: [{ kind: "match", line: line3 }],
+          scope: {
+            mode: "symbol",
+            symbol: { name: "alpha", kind: "function", startLine: 1, endLine: 10 },
+            matchLines: [3],
+            contextLines: 3,
+          },
+        },
+      ],
+      records: [{ path: "/tmp/foo.ts", kind: "match", ...line3 }],
+      scopeMode: "symbol",
+    });
+    expect(out.text).toContain("--- foo.ts :: function alpha (1-10, 1 matches, scoped to ±3 lines) ---");
+  });
+
+  it("renders '±0' when scope.contextLines is 0", async () => {
+    const line3 = buildPtcLine(3, "  const x = 1;");
+    const out = buildGrepOutput({
+      summary: false,
+      totalMatches: 1,
+      groups: [
+        {
+          displayPath: "foo.ts",
+          absolutePath: "/tmp/foo.ts",
+          matchCount: 1,
+          entries: [{ kind: "match", line: line3 }],
+          scope: {
+            mode: "symbol",
+            symbol: { name: "alpha", kind: "function", startLine: 1, endLine: 10 },
+            matchLines: [3],
+            contextLines: 0,
+          },
+        },
+      ],
+      records: [{ path: "/tmp/foo.ts", kind: "match", ...line3 }],
+      scopeMode: "symbol",
+    });
+    expect(out.text).toContain("scoped to ±0 lines");
+  });
+
+  it("omits the '±N lines' suffix when scope.contextLines is unset", async () => {
+    const line3 = buildPtcLine(3, "  const x = 1;");
+    const out = buildGrepOutput({
+      summary: false,
+      totalMatches: 1,
+      groups: [
+        {
+          displayPath: "foo.ts",
+          absolutePath: "/tmp/foo.ts",
+          matchCount: 1,
+          entries: [{ kind: "match", line: line3 }],
+          scope: {
+            mode: "symbol",
+            symbol: { name: "alpha", kind: "function", startLine: 1, endLine: 10 },
+            matchLines: [3],
+          },
+        },
+      ],
+      records: [{ path: "/tmp/foo.ts", kind: "match", ...line3 }],
+      scopeMode: "symbol",
+    });
+    expect(out.text).toContain("--- foo.ts :: function alpha (1-10, 1 matches) ---");
+    expect(out.text).not.toContain("scoped to");
   });
 });

@@ -68,4 +68,11 @@ describe("grep scope schema passthrough", () => {
     expect(normal.details?.ptcValue?.records).toHaveLength(3);
     expect((normal.details?.ptcValue as any).scopes).toBeUndefined();
   });
+
+  it("exposes optional scopeContext as a number-or-string union", async () => {
+    const tool = await getGrepTool();
+    expect(tool.parameters.properties.scopeContext).toBeDefined();
+    expect(tool.parameters.properties.scopeContext.anyOf).toBeDefined();
+    expect(tool.parameters.required ?? []).not.toContain("scopeContext");
+  });
 });

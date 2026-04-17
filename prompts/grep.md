@@ -12,7 +12,7 @@ Includes N surrounding lines before and after each match. Nearby matches are mer
 Returns per-file match counts only — no line content, no anchors. Use this first to scope a broad search across many files, then drill into specific files with a targeted search.
 
 ### Symbol-scoped mode (`scope: "symbol"`)
-Groups matches by their enclosing function, method, or class. Shows the full symbol block containing each match, not just the matching line. Falls back gracefully for files without structural maps. Ignored when `summary: true`.
+Groups matches by their enclosing function, method, or class. By default, shows the full symbol block containing each match. Pass `scopeContext: N` to window output to ±N lines around each match (clipped at the symbol boundary); pass `scopeContext: 0` to get only match lines. The group header carries the line range and the `scoped to ±N lines` suffix. Falls back gracefully for files without structural maps. Ignored when `summary: true`.
 
 ## Parameters
 
@@ -25,6 +25,7 @@ Groups matches by their enclosing function, method, or class. Shows the full sym
 - `limit` — Maximum number of matches to return (default: 100)
 - `summary` — Return per-file match counts only (no hashline anchors)
 - `scope` — Set to `"symbol"` to group matches by enclosing symbol block
+- `scopeContext` — Number of context lines to show around each match within the enclosing symbol (requires `scope: "symbol"`). `0` = match lines only; `N > 0` = ±N lines clipped at the symbol boundary. Rejected when `scope` is not `"symbol"` — use `context` for non-symbol-scoped searches.
 
 ## Usage Guidance
 
@@ -52,3 +53,29 @@ src/client.ts:>>12:c7e|const api = new ApiClient();
 ```
 
 Lines with `>>` are matches; lines with `  ` (two spaces) are context lines.
+
+### scope: "symbol" with scopeContext
+
+```
+[2 matches in 1 files]
+--- src/server.ts :: function handleRequest (42-180, 2 matches, scoped to ±3 lines) ---
+src/server.ts:  55:a12|  // validate input
+src/server.ts:  56:b34|  if (!req.body) return 400;
+src/server.ts:  57:c56|  // route lookup
+src/server.ts:>>58:d78|  const route = findRoute(req);
+src/server.ts:  59:e9a|  if (!route) return 404;
+src/server.ts:  60:f01|  // auth
+src/server.ts:  61:012|  const user = await authenticate(req);
+--
+src/server.ts:  75:234|  // response
+src/server.ts:>>76:456|  const result = await handle(route, user);
+src/server.ts:  77:678|  res.json(result);
+```
+
+With `scopeContext: 0`, only match lines are shown under the header:
+
+```
+--- src/server.ts :: function handleRequest (42-180, 2 matches, scoped to ±0 lines) ---
+src/server.ts:>>58:d78|  const route = findRoute(req);
+src/server.ts:>>76:456|  const result = await handle(route, user);
+```

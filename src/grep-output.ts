@@ -44,6 +44,7 @@ export interface GrepOutputGroup {
     mode: "symbol";
     symbol: GrepOutputScopeSymbol;
     matchLines: number[];
+    contextLines?: number;
   };
 }
 
@@ -92,7 +93,8 @@ function renderGroupHeader(group: GrepOutputGroup): string {
   }
 
   const parent = group.scope.symbol.parentName ? ` in ${group.scope.symbol.parentName}` : "";
-  return `--- ${group.displayPath} :: ${group.scope.symbol.kind} ${group.scope.symbol.name}${parent} (${group.scope.symbol.startLine}-${group.scope.symbol.endLine}, ${group.matchCount} matches) ---`;
+  const suffix = group.scope.contextLines !== undefined ? `, scoped to ±${group.scope.contextLines} lines` : "";
+  return `--- ${group.displayPath} :: ${group.scope.symbol.kind} ${group.scope.symbol.name}${parent} (${group.scope.symbol.startLine}-${group.scope.symbol.endLine}, ${group.matchCount} matches${suffix}) ---`;
 }
 
 function buildScopeMetadata(groups: GrepOutputGroup[], warnings: GrepScopeWarning[]) {
