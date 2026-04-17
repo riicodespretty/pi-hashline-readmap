@@ -284,6 +284,7 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				firstChangedLine: anchorResult.firstChangedLine ?? diffResult.firstChangedLine,
 				warnings,
 				noopEdits: anchorResult.noopEdits ?? [],
+				edits,
 				semanticSummary,
 			});
 

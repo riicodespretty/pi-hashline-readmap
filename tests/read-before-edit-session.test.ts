@@ -76,7 +76,7 @@ describe("extension-scoped read tracking", () => {
     );
 
     expect(editResult.isError).not.toBe(true);
-    expect(getTextContent(editResult)).toContain(`Updated ${filePath}`);
+    expect(getTextContent(editResult)).toContain(`Edited ${filePath} (1 change, +1 -1 line)`);
     expect(readFileSync(filePath, "utf-8")).toBe("const value = 2;\n");
   });
 });

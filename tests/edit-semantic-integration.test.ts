@@ -55,19 +55,17 @@ describe("edit semantic classification integration", () => {
     expect(ptc.semanticSummary.classification).toBe("whitespace-only");
   });
 
-  it("preserves existing text output unchanged when semanticSummary is added", async () => {
+  it("surfaces the Edited summary without adding semantic noise for plain semantic edits", async () => {
     const filePath = makeFixture("const a = 1;\n");
     const lines = readFileSync(filePath, "utf-8").split("\n");
     const anchor = `1:${computeLineHash(1, lines[0])}`;
-
     const result = await callEditTool({
       path: filePath,
       edits: [{ set_line: { anchor, new_text: "const a = 2;" } }],
     });
-
     const text = result.content.find((c: any) => c.type === "text")?.text ?? "";
-    expect(text).toContain("Updated");
-    expect(text).not.toContain("semantic");
-    expect(text).not.toContain("whitespace");
+    expect(text.split("\n")[0]).toBe(`Edited ${filePath} (1 change, +1 -1 line)`);
+    expect(text).not.toContain("[semantic:");
+    expect(text).not.toContain("⚠ Edit classified as whitespace-only");
   });
 });

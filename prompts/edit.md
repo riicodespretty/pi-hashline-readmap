@@ -161,3 +161,5 @@ edit({ path: "src/new-file.ts", edits: [{ set_line: { anchor: "1:2f9", new_text:
 - Prefer anchored variants over `replace`.
 - Re-run `read`, `grep`, `ast_search`, or `write` whenever you need fresh anchors.
 - Anchored edits are validated and applied atomically from bottom to top.
+- If a non-whitespace-intent edit produces only whitespace-only changes, the tool emits a prominent warning so you can re-read and verify before assuming behavior changed.
+- After a successful replace-only batch, the tool emits an informational hint nudging you back toward anchored variants for safer future edits.

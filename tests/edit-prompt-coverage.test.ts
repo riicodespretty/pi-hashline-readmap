@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 describe("prompts/edit.md coverage", () => {
-  it("documents recovery, variants, escape-hatch replace, and all anchor sources", () => {
+  it("documents recovery, variants, escape-hatch replace, anchor sources, whitespace warnings, and replace nudges", () => {
     const content = readFileSync(resolve("prompts/edit.md"), "utf8");
 
     expect(content).toContain("hash mismatch");
@@ -18,6 +18,10 @@ describe("prompts/edit.md coverage", () => {
     expect(content).toContain("grep");
     expect(content).toContain("ast_search");
     expect(content).toContain("write");
+    expect(content).toContain("non-whitespace-intent edit");
+    expect(content).toContain("whitespace-only changes");
+    expect(content).toContain("replace-only batch");
+    expect(content).toContain("anchored variants");
     expect(content.split("\n").length).toBeGreaterThanOrEqual(80);
   });
 });

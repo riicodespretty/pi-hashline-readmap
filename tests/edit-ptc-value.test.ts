@@ -38,7 +38,6 @@ describe("edit ptcValue", () => {
     const originalLines = readFileSync(filePath, "utf-8").split("\n");
     const anchor1 = `1:${computeLineHash(1, originalLines[0])}`;
     const anchor2 = `2:${computeLineHash(2, originalLines[1])}`;
-
     const result = await callEditTool({
       path: filePath,
       edits: [
@@ -46,14 +45,12 @@ describe("edit ptcValue", () => {
         { set_line: { anchor: anchor2, new_text: "const two = 22;" } },
       ],
     });
-
     const text = getTextContent(result);
     const ptc = result.details?.ptcValue;
-
     expect(ptc).toBeDefined();
     expect(ptc.ok).toBe(true);
     expect(ptc.path).toBe(filePath);
-    expect(ptc.summary).toContain("Updated");
+    expect(ptc.summary).toBe(`Updated ${filePath}`);
     expect(ptc.firstChangedLine).toBe(2);
     expect(ptc.diff).toContain("const two = 2;");
     expect(ptc.diff).toContain("const two = 22;");
@@ -65,7 +62,7 @@ describe("edit ptcValue", () => {
         currentContent: "const one = 1;",
       },
     ]);
-    expect(text.startsWith("Updated")).toBe(true);
+    expect(text.split("\n")[0]).toBe(`Edited ${filePath} (2 changes, +1 -1 line)`);
   });
 
   it("returns legacy normalization warning when using top-level oldText/newText", async () => {
