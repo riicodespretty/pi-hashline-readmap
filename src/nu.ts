@@ -205,6 +205,45 @@ export async function executeNuScript(opts: NuExecuteOptions): Promise<NuExecute
 }
 
 // ---------------------------------------------------------------------------
+// Error-driven hints (Tier 2 — appended to execute() output on failure only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Substring → hint map. When a `nu` invocation fails (non-zero exit or timeout)
+ * and the merged output contains one of these needles, the matching hint is
+ * appended to the returned text by `augmentNuOutput`. Not injected into the
+ * prompt; agents see hints only on failure.
+ */
+export const NU_ERROR_HINTS: Record<string, string> = {
+  "command not found: gstat":
+    "gstat requires nu_plugin_gstat. Install: `cargo install nu_plugin_gstat` then `plugin add <path>` inside nu.",
+  "command not found: query":
+    "query requires nu_plugin_query (supports `query json <jsonpath>`, `query xml <xpath>`, `query web <css>`). Install: `cargo install nu_plugin_query` then `plugin add <path>` inside nu.",
+  "command not found: from ini":
+    "INI/plist parsing requires nu_plugin_formats. Install: `cargo install nu_plugin_formats` then `plugin add <path>` inside nu.",
+};
+
+/**
+ * Append a `[nu-hint] <text>` line to `result.output` for each known needle
+ * that appears in the output, but only when the invocation failed
+ * (`exitCode !== 0` or `timedOut`). Returns the output unchanged on success
+ * or when no needle matches.
+ */
+export function augmentNuOutput(result: NuExecuteResult): string {
+  const failed = result.exitCode !== 0 || result.timedOut;
+  if (!failed) return result.output;
+
+  const hints: string[] = [];
+  for (const [needle, hint] of Object.entries(NU_ERROR_HINTS)) {
+    if (result.output.includes(needle)) {
+      hints.push(`[nu-hint] ${hint}`);
+    }
+  }
+  if (hints.length === 0) return result.output;
+  return `${result.output}\n\n${hints.join("\n")}`;
+}
+
+// ---------------------------------------------------------------------------
 // Prompt & registration
 // ---------------------------------------------------------------------------
 
@@ -229,52 +268,9 @@ export const NU_GUIDELINES: string[] = [
 | Build Docker image | bash |
 | Explore an API response | nu |
 | Run a Makefile target | bash |`,
+  `Primer: ls | where size > 10kb | first 5 · open package.json | get scripts · http get URL | get results · where / sort-by / first / length / math sum / group-by · strings in filters must be quoted.`,
 
-  `## File exploration
-ls **/*.ts | where size > 10kb | sort-by size | reverse | first 10
-ls src/ | where type == "dir"
-glob **/*.test.ts | length`,
-
-  `## Structured data access
-open package.json | get scripts
-open tsconfig.json | get compilerOptions.strict
-open Cargo.toml | get dependencies | transpose key value`,
-
-  `## Filtering and transforming
-open data.csv | where status == "active" | group-by region
-open results.json | get items | where score > 90 | select name score`,
-
-  `## System inspection
-ps | where cpu > 5 | sort-by cpu | reverse | first 10
-sys mem`,
-
-  `## HTTP (exploring APIs)
-http get https://api.example.com/data | get results | first 5`,
-
-  `## Quick calculations
-1400 * 300
-(open data.csv | get revenue | math sum) / (open data.csv | length)`,
-
-  `## Key syntax
-- Filter rows: | where column > value or | where name =~ "pattern"
-- Select columns: | select col1 col2
-- Sort: | sort-by column (add | reverse for descending)
-- Count: | length
-- Aggregate: | math sum, | math avg, | math max
-- First/last N: | first 5, | last 3
-- Group: | group-by column
-- Convert: | to json, | to csv
-- Strings in filters must be quoted: | where name == "value"`,
-  `## Nushell plugins (install separately)
-If installed, these plugins are available in nu pipelines:
-- \`gstat\` — structured git status: branch, ahead/behind, staged/unstaged counts, conflicts
-- \`query json <jsonpath>\` — JSONPath queries on structured data
-- \`query xml <xpath>\` — XPath queries on XML documents
-- \`query web <css-selector>\` — CSS selector queries on HTML
-- \`from ini\` / \`from plist\` — parse INI and plist config formats (via formats plugin)
-- \`into semver\` / \`semver bump <level>\` — parse and manipulate SemVer versions
-- \`file\` — detect file type from magic bytes, not extension
-Install: \`cargo install nu_plugin_gstat nu_plugin_query nu_plugin_formats\` then \`plugin add <path>\` inside nushell.`,
+  `Optional plugins if installed: gstat, query, formats, semver, file. Run \`plugin list\` inside nu to check availability.`,
 ];
 
 export const NU_PTC = {
@@ -319,7 +315,7 @@ export function registerNuTool(pi: ExtensionAPI): NuToolDefinition | false {
           : undefined,
       });
       return {
-        content: [{ type: "text" as const, text: result.output }],
+        content: [{ type: "text" as const, text: augmentNuOutput(result) }],
         details: {
           exitCode: result.exitCode,
           timedOut: result.timedOut,

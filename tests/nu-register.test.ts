@@ -25,9 +25,11 @@ describe("NU_GUIDELINES", () => {
     expect(allText).toContain("get");
   });
 
-  it("includes system inspection patterns", () => {
-    expect(allText).toContain("ps");
-    expect(allText).toContain("sys mem");
+  it("includes a plugin pointer block", () => {
+    expect(allText).toContain("plugin list");
+    expect(allText).toContain("gstat");
+    expect(allText).toContain("query");
+    expect(allText).toContain("formats");
   });
 
   it("includes key syntax reference", () => {
