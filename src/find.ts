@@ -6,6 +6,8 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { execFileSync, execFile } from "node:child_process";
 import { resolve, relative, join } from "node:path";
 import { resolveToCwd } from "./path-utils.js";
+import * as findStat from "./find-stat.js";
+import { parseRelativeOrIsoDate, parseSize } from "./find-parsers.js";
 
 const MAX_BYTES = 50 * 1024; // 50 KB
 const DEFAULT_LIMIT = 1000;
@@ -67,12 +69,10 @@ async function loadGitignore(dir: string): Promise<any | null> {
 
 async function findWithNodeFallback(
   searchPath: string,
-  pattern: string,
+  matcher: (basename: string) => boolean,
   type: "file" | "dir" | "any",
   maxDepth?: number,
 ): Promise<FindEntry[]> {
-  const picomatch = (await import("picomatch" as any)).default;
-  const isMatch = picomatch(pattern, { basename: true, dot: true });
   const ignore = (await import("ignore" as any)).default;
 
   const entries: FindEntry[] = [];
@@ -119,12 +119,12 @@ async function findWithNodeFallback(
       if (ignored) continue;
 
       if (dirent.isDirectory()) {
-        if ((type === "dir" || type === "any") && isMatch(dirent.name)) {
+        if ((type === "dir" || type === "any") && matcher(dirent.name)) {
           entries.push({ path: relFromRoot, type: "dir" });
         }
         await walk(fullPath, depth + 1, localIgnores);
       } else {
-        if ((type === "file" || type === "any") && isMatch(dirent.name)) {
+        if ((type === "file" || type === "any") && matcher(dirent.name)) {
           entries.push({ path: relFromRoot, type: "file" });
         }
       }
@@ -204,6 +204,44 @@ async function findWithFd(
   });
 }
 
+async function findWithFdRegex(
+  searchPath: string,
+  matcher: (basename: string) => boolean,
+  type: "file" | "dir" | "any",
+  maxDepth?: number,
+): Promise<FindEntry[]> {
+  return new Promise((resolve_, reject) => {
+    const args: string[] = ["--glob", "*", "--hidden", "--color", "never"];
+    if (type === "file") args.push("--type", "f");
+    else if (type === "dir") args.push("--type", "d");
+    if (maxDepth !== undefined) args.push("--max-depth", String(maxDepth));
+    args.push(".");
+    execFile("fd", args, { maxBuffer: 10 * 1024 * 1024, cwd: searchPath }, (err, stdout, _stderr) => {
+      if (err && !stdout) {
+        if ((err as any).code === 1) return resolve_([]);
+        return reject(err);
+      }
+      const lines = stdout.trim().split("\n").filter((l) => l.length > 0);
+      const entries: FindEntry[] = [];
+      for (const line of lines) {
+        let relPath = normalizePath(line.trim());
+        if (relPath.startsWith("./")) relPath = relPath.slice(2);
+        const hadTrailingSlash = relPath.endsWith("/");
+        if (hadTrailingSlash) relPath = relPath.slice(0, -1);
+        if (!relPath || relPath.startsWith("..")) continue;
+        const name = relPath.split("/").pop() ?? relPath;
+        if (!matcher(name)) continue;
+        if (type === "file") entries.push({ path: relPath, type: "file" });
+        else if (type === "dir") entries.push({ path: relPath, type: "dir" });
+        else if (hadTrailingSlash) entries.push({ path: relPath, type: "dir" });
+        else entries.push({ path: relPath, type: "file" });
+      }
+      entries.sort((a, b) => a.path.localeCompare(b.path));
+      resolve_(entries);
+    });
+  });
+}
+
 function formatOutput(
   entries: FindEntry[],
   totalCount: number,
@@ -253,13 +291,64 @@ export function registerFindTool(pi: ExtensionAPI) {
           ),
         ),
         maxDepth: Type.Optional(Type.Number({ description: "Maximum directory depth" })),
+        regex: Type.Optional(
+          Type.Boolean({ description: "Treat pattern as a JavaScript regular expression against file basename (default: false)" }),
+        ),
+        sortBy: Type.Optional(
+          Type.Union(
+            [Type.Literal("name"), Type.Literal("mtime"), Type.Literal("size")],
+            { description: "Sort results by name (default), mtime, or size. Ascending unless reverse: true." },
+          ),
+        ),
+        reverse: Type.Optional(
+          Type.Boolean({ description: "Reverse the sort order (descending). Combined with sortBy: 'mtime' → newest first; with sortBy: 'size' → largest first." }),
+        ),
+        modifiedSince: Type.Optional(
+          Type.String({
+            description:
+              "Keep only entries modified strictly after this instant. " +
+              "Accepts ISO date ('2024-01-01'), ISO timestamp ('2024-01-01T00:00:00Z'), " +
+              "or relative shorthand: '30m', '1h', '24h', '7d'.",
+          }),
+        ),
+        minSize: Type.Optional(
+          Type.Union(
+            [Type.Number(), Type.String()],
+            {
+              description:
+                "Minimum file size (inclusive). Bytes as number, or string with 1024-based suffix " +
+                "(B/K/KB/M/MB/G/GB, case-insensitive), e.g. '1MB', '500K', '1.5GB'. " +
+                "Filters files only; directories are never removed by size.",
+            },
+          ),
+        ),
+        maxSize: Type.Optional(
+          Type.Union(
+            [Type.Number(), Type.String()],
+            {
+              description:
+                "Maximum file size (inclusive). Same format as minSize.",
+            },
+          ),
+        ),
       },
       { required: ["pattern"] },
     ),
-
     async execute(
       _toolCallId: string,
-      params: { pattern: string; path?: string; limit?: number; type?: "file" | "dir" | "any"; maxDepth?: number },
+      params: {
+        pattern: string;
+        path?: string;
+        limit?: number;
+        type?: "file" | "dir" | "any";
+        maxDepth?: number;
+        regex?: boolean;
+        sortBy?: "name" | "mtime" | "size";
+        reverse?: boolean;
+        modifiedSince?: string;
+        minSize?: number | string;
+        maxSize?: number | string;
+      },
       _signal: AbortSignal | undefined,
       _onUpdate: any,
       ctx: any,
@@ -292,12 +381,107 @@ export function registerFindTool(pi: ExtensionAPI) {
       const showFdHint = !useFd && !_testable.fdHintShown;
       if (showFdHint) _testable.fdHintShown = true;
 
+      let matcher: (basename: string) => boolean;
+      if (params.regex) {
+        let re: RegExp;
+        try {
+          re = new RegExp(pattern);
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text:
+                  `Error: invalid regex for fields 'pattern'/'regex' ` +
+                  `(${JSON.stringify(pattern)}): ${(err as Error).message}`,
+              },
+            ],
+            isError: true,
+            details: {},
+          };
+        }
+        matcher = (basename: string) => re.test(basename);
+      } else {
+        const picomatch = (await import("picomatch" as any)).default;
+        const isMatch = picomatch(pattern, { basename: true, dot: true });
+        matcher = (basename: string) => isMatch(basename);
+      }
       let allEntries: FindEntry[];
       if (useFd) {
-        allEntries = await findWithFd(searchPath, pattern, type, params.maxDepth);
+        allEntries = params.regex
+          ? await findWithFdRegex(searchPath, matcher, type, params.maxDepth)
+          : await findWithFd(searchPath, pattern, type, params.maxDepth);
       } else {
-        allEntries = await findWithNodeFallback(searchPath, pattern, type, params.maxDepth);
+        allEntries = await findWithNodeFallback(searchPath, matcher, type, params.maxDepth);
       }
+
+      let modifiedSinceMs: number | null = null;
+      let minSizeBytes: number | null = null;
+      let maxSizeBytes: number | null = null;
+      try {
+        if (params.modifiedSince !== undefined) {
+          modifiedSinceMs = parseRelativeOrIsoDate("modifiedSince", params.modifiedSince).getTime();
+        }
+        if (params.minSize !== undefined) {
+          minSizeBytes = parseSize("minSize", params.minSize);
+        }
+        if (params.maxSize !== undefined) {
+          maxSizeBytes = parseSize("maxSize", params.maxSize);
+        }
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+          isError: true,
+          details: {},
+        };
+      }
+      const sortBy = params.sortBy ?? "name";
+      const dir = params.reverse ? -1 : 1;
+      const needsStat =
+        sortBy === "mtime" ||
+        sortBy === "size" ||
+        modifiedSinceMs !== null ||
+        minSizeBytes !== null ||
+        maxSizeBytes !== null;
+      let statsByIndex: (import("node:fs").Stats | null)[] = [];
+      if (needsStat) {
+        statsByIndex = await findStat.statAllWithConcurrency(
+          allEntries.map((e) => e.path),
+          searchPath,
+        );
+      }
+      const filtered: Array<{ entry: FindEntry; st: import("node:fs").Stats | null }> = [];
+      for (let i = 0; i < allEntries.length; i++) {
+        const entry = allEntries[i];
+        const st = needsStat ? statsByIndex[i] ?? null : null;
+        if (modifiedSinceMs !== null) {
+          if (!st) continue;
+          if (st.mtimeMs <= modifiedSinceMs) continue;
+        }
+        if ((minSizeBytes !== null || maxSizeBytes !== null) && entry.type === "file") {
+          if (!st) continue;
+          if (minSizeBytes !== null && st.size < minSizeBytes) continue;
+          if (maxSizeBytes !== null && st.size > maxSizeBytes) continue;
+        }
+        filtered.push({ entry, st });
+      }
+      filtered.sort((a, b) => {
+        if (sortBy === "mtime") {
+          const cmp = ((a.st?.mtimeMs ?? 0) - (b.st?.mtimeMs ?? 0)) * dir;
+          if (cmp !== 0) return cmp;
+          return a.entry.path.localeCompare(b.entry.path);
+        }
+        if (sortBy === "name") {
+          return a.entry.path.localeCompare(b.entry.path) * dir;
+        }
+        if (sortBy === "size") {
+          const cmp = ((a.st?.size ?? 0) - (b.st?.size ?? 0)) * dir;
+          if (cmp !== 0) return cmp;
+          return a.entry.path.localeCompare(b.entry.path);
+        }
+        return a.entry.path.localeCompare(b.entry.path);
+      });
+      allEntries = filtered.map((d) => d.entry);
 
       const totalCount = allEntries.length;
       const truncated = totalCount > limit;

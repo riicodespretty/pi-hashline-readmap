@@ -33,7 +33,7 @@ describe("find core", () => {
     expect(schema.properties.maxDepth).toBeDefined();
     // pattern is required, others optional
     expect(schema.required).toContain("pattern");
-    expect(Object.keys(schema.properties)).toHaveLength(5);
+    expect(Object.keys(schema.properties)).toHaveLength(11);
   });
 
   it("finds files matching glob pattern with fallback, sorted and relative", async () => {
@@ -550,3 +550,4 @@ describe("find path resolution", () => {
     expect(result.isError).toBeUndefined();
   });
 });
+
