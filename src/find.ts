@@ -14,6 +14,15 @@ const DEFAULT_LIMIT = 1000;
 const FIND_PROMPT = readFileSync(new URL("../prompts/find.md", import.meta.url), "utf-8").trim();
 const FIND_DESC = FIND_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? FIND_PROMPT;
 
+export const FIND_PTC = {
+  callable: true,
+  enabled: true,
+  policy: "read-only" as const,
+  readOnly: true,
+  pythonName: "find",
+  defaultExposure: "safe-by-default" as const,
+};
+
 
 export interface FindEntry {
   path: string;
@@ -275,10 +284,11 @@ function formatOutput(
 }
 
 export function registerFindTool(pi: ExtensionAPI) {
-  const tool = {
+  const tool: Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof FIND_PTC } = {
     name: "find",
     label: "find",
     description: FIND_DESC,
+    ptc: FIND_PTC,
     parameters: Type.Object(
       {
         pattern: Type.String({ description: "Glob pattern (e.g. '*.ts', '*.test.ts')" }),
@@ -520,6 +530,6 @@ export function registerFindTool(pi: ExtensionAPI) {
     },
   };
 
-  pi.registerTool(tool as any);
+  pi.registerTool(tool);
   return tool;
 }

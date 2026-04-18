@@ -60,17 +60,19 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
 
   const grepTool = registerGrepTool(pi, { astSearchGuideline, onFileAnchored: noteRead });
   const sgTool = registerSgTool(pi, { onFileAnchored: noteRead });
-  registerNuTool(pi);
+  const nuTool = registerNuTool(pi);
   const writeTool = registerWriteTool(pi, { onFileAnchored: noteRead });
-  registerLsTool(pi);
-  registerFindTool(pi);
-
+  const lsTool = registerLsTool(pi);
+  const findTool = registerFindTool(pi);
   const toolExecutors = {
     read: readTool,
     edit: editTool,
     grep: grepTool,
     ast_search: sgTool,
     write: writeTool,
+    ls: lsTool,
+    find: findTool,
+    ...(nuTool ? { nu: nuTool } : {}),
   };
 
   (globalThis as any).__hashlineToolExecutors = toolExecutors;

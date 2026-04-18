@@ -287,13 +287,14 @@ export const NU_PTC = {
 };
 
 /**
- * Register the `nu` tool with pi. Returns true if registered, false if nu is not available.
+ * Register the `nu` tool with pi. Returns the tool definition if registered, false if nu is not available.
  */
-export function registerNuTool(pi: ExtensionAPI): boolean {
+export type NuToolDefinition = Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof NU_PTC };
+
+export function registerNuTool(pi: ExtensionAPI): NuToolDefinition | false {
   if (!isNuAvailable()) {
     return false;
   }
-
   const tool = {
     name: "nu",
     label: "nushell",
@@ -307,7 +308,6 @@ export function registerNuTool(pi: ExtensionAPI): boolean {
         Type.Number({ description: "Maximum run time in seconds. Defaults to 30." }),
       ),
     }),
-
     async execute(_toolCallId, params: { command: string; timeout?: number }, signal, onUpdate, ctx) {
       const result = await executeNuScript({
         command: params.command,
@@ -318,7 +318,6 @@ export function registerNuTool(pi: ExtensionAPI): boolean {
           ? (text) => onUpdate({ content: [{ type: "text", text }], details: {} })
           : undefined,
       });
-
       return {
         content: [{ type: "text" as const, text: result.output }],
         details: {
@@ -328,7 +327,6 @@ export function registerNuTool(pi: ExtensionAPI): boolean {
         },
       };
     },
-
     renderCall(args: any, theme: any) {
       const { command } = args as { command: string };
       const label = theme.fg("toolTitle", "🐚 nushell");
@@ -339,7 +337,6 @@ export function registerNuTool(pi: ExtensionAPI): boolean {
         : "";
       return new Text(`${label} ${theme.fg("muted", preview)}${full}`, 0, 0);
     },
-
     renderResult(result, _options, theme) {
       const output =
         result.content[0]?.type === "text"
@@ -347,8 +344,7 @@ export function registerNuTool(pi: ExtensionAPI): boolean {
           : "";
       return new Text(theme.fg("toolOutput", output), 0, 0);
     },
-  } satisfies Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof NU_PTC };
-
+  } satisfies NuToolDefinition;
   pi.registerTool(tool);
-  return true;
+  return tool;
 }

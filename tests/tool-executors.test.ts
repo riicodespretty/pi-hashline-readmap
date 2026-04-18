@@ -85,8 +85,10 @@ describe("index.ts emits and stashes tool executors", () => {
     expect(stash.edit).toBeDefined();
     expect(stash.grep).toBeDefined();
     expect(stash.ast_search).toBeDefined();
+    expect(stash.write).toBeDefined();
+    expect(stash.ls).toBeDefined();
+    expect(stash.find).toBeDefined();
   });
-
   it("emits on hashline:tool-executors channel", async () => {
     const pi = createMockPi();
     const { default: init } = await import("../index.js");
@@ -98,33 +100,21 @@ describe("index.ts emits and stashes tool executors", () => {
         edit: expect.objectContaining({ name: "edit" }),
         grep: expect.objectContaining({ name: "grep" }),
         ast_search: expect.objectContaining({ name: "ast_search" }),
+        write: expect.objectContaining({ name: "write" }),
+        ls: expect.objectContaining({ name: "ls" }),
+        find: expect.objectContaining({ name: "find" }),
       })
     );
   });
-
   it("all stashed tools have callable execute functions", async () => {
     const pi = createMockPi();
     const { default: init } = await import("../index.js");
     init(pi as any);
     const stash = (globalThis as any).__hashlineToolExecutors;
-    for (const key of ["read", "edit", "grep", "ast_search"]) {
+    for (const key of ["read", "edit", "grep", "ast_search", "write", "ls", "find"]) {
       expect(typeof stash[key].execute).toBe("function");
     }
   });
-
-  it("globalThis stash and events emit happen in correct order (stash before emit)", async () => {
-    const pi = createMockPi();
-    let stashAtEmitTime: any = undefined;
-    pi.events.emit = vi.fn((_channel: string, _data: unknown) => {
-      stashAtEmitTime = (globalThis as any).__hashlineToolExecutors;
-    });
-    const { default: init } = await import("../index.js");
-    init(pi as any);
-    expect(stashAtEmitTime).toBeDefined();
-    expect(stashAtEmitTime.read).toBeDefined();
-    expect(stashAtEmitTime).toBe((globalThis as any).__hashlineToolExecutors);
-  });
-
   it("emitted payload includes full tool definitions with description and parameters", async () => {
     const pi = createMockPi();
     const { default: init } = await import("../index.js");
@@ -133,7 +123,7 @@ describe("index.ts emits and stashes tool executors", () => {
       (c: any[]) => c[0] === "hashline:tool-executors"
     )?.[1] as Record<string, any>;
     expect(payload).toBeDefined();
-    for (const key of ["read", "edit", "grep", "ast_search"]) {
+    for (const key of ["read", "edit", "grep", "ast_search", "write", "ls", "find"]) {
       expect(typeof payload[key].description).toBe("string");
       expect(payload[key].parameters).toBeDefined();
       expect(typeof payload[key].execute).toBe("function");

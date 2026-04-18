@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -62,10 +62,49 @@ describe("NU_PTC", () => {
   });
 });
 
+afterEach(() => {
+  vi.resetModules();
+  vi.doUnmock("node:child_process");
+});
+
 describe("registerNuTool", () => {
-  it("is exported as a function", async () => {
+  it("returns the registered tool definition when nushell is available", async () => {
+    vi.resetModules();
+    vi.doMock("node:child_process", async () => {
+      const actual = await vi.importActual<any>("node:child_process");
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => Buffer.from("0.111.0\n")),
+      };
+    });
     const { registerNuTool } = await import("../src/nu.js");
-    expect(typeof registerNuTool).toBe("function");
+    const pi = { registerTool: vi.fn() };
+    const tool = registerNuTool(pi as any);
+    expect(tool).toMatchObject({
+      name: "nu",
+      label: "nushell",
+      ptc: NU_PTC,
+    });
+    expect(pi.registerTool).toHaveBeenCalledWith(tool);
+  });
+
+  it("returns false without calling pi.registerTool when nushell is unavailable", async () => {
+    vi.resetModules();
+    vi.doMock("node:child_process", async () => {
+      const actual = await vi.importActual<any>("node:child_process");
+      return {
+        ...actual,
+        execFileSync: vi.fn(() => {
+          throw new Error("nu missing");
+        }),
+      };
+    });
+
+    const { registerNuTool } = await import("../src/nu.js");
+    const pi = { registerTool: vi.fn() };
+
+    expect(registerNuTool(pi as any)).toBe(false);
+    expect(pi.registerTool).not.toHaveBeenCalled();
   });
 });
 

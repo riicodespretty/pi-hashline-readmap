@@ -11,6 +11,15 @@ const DEFAULT_LIMIT = 500;
 const LS_PROMPT = readFileSync(new URL("../prompts/ls.md", import.meta.url), "utf-8").trim();
 const LS_DESC = LS_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? LS_PROMPT;
 
+export const LS_PTC = {
+  callable: true,
+  enabled: true,
+  policy: "read-only" as const,
+  readOnly: true,
+  pythonName: "ls",
+  defaultExposure: "safe-by-default" as const,
+};
+
 export interface LsEntry {
   name: string;
   type: "file" | "dir";
@@ -57,10 +66,11 @@ function formatOutput(entries: LsEntry[], totalCount: number, truncated: boolean
 }
 
 export function registerLsTool(pi: ExtensionAPI) {
-  const tool = {
+  const tool: Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof LS_PTC } = {
     name: "ls",
     label: "ls",
     description: LS_DESC,
+    ptc: LS_PTC,
     parameters: Type.Object({
       path: Type.Optional(Type.String({ description: "Directory to list (default: cwd)" })),
       limit: Type.Optional(Type.Number({ description: "Max entries to return (default: 500)" })),
@@ -149,6 +159,6 @@ export function registerLsTool(pi: ExtensionAPI) {
     },
   };
 
-  pi.registerTool(tool as any);
+  pi.registerTool(tool);
   return tool;
 }

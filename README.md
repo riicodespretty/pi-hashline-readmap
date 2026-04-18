@@ -356,25 +356,31 @@ Hashes and anchors are tied to raw file content. Display fields are escaped for 
 
 ### PTC tool policy contract
 The package exports a machine-readable tool policy contract. The primary export is `HASHLINE_TOOL_PTC_POLICY`, and the package also exports `getHashlineToolPtcPolicy()`.
-
 ```ts
 import { HASHLINE_TOOL_PTC_POLICY } from "pi-hashline-readmap";
 ```
-
 Policy summary:
-- `read` and `grep` are safe-by-default and read-only
-- `ast_search` is opt-in and read-only
+- `read`, `grep`, `ls`, and `find` are safe-by-default and read-only
+- `ast_search` and `nu` are opt-in and read-only
 - `edit` is not safe-by-default and is mutating
-
 `pi-prompt-assembler` may optionally consume this contract, but this package does not depend on it.
-
 ## EventBus integration
-On load, the extension emits tool executor references for downstream consumers:
+On load, the extension emits tool executor references for downstream consumers.
+
+The emitted/stashed executor object always includes `read`, `edit`, `grep`, `ast_search`, `write`, `ls`, and `find`, and also includes `nu` when Nushell is available at runtime.
 
 ```ts
-pi.events.emit("hashline:tool-executors", { read, edit, grep, ast_search });
+pi.events.emit("hashline:tool-executors", {
+  read,
+  edit,
+  grep,
+  ast_search,
+  write,
+  ls,
+  find,
+  ...(nu ? { nu } : {}),
+});
 ```
-
 The same executors are also exposed at `globalThis.__hashlineToolExecutors`.
 
 ## Feature-by-feature reference
