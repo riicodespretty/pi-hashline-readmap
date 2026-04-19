@@ -68,8 +68,10 @@ describe("doom loop warning content preservation", () => {
     );
 
     expect(third).toBeDefined();
-    expect(third.content[0].text).toContain("plain output");
-    expect(third.content[0].text).toContain("You appear to be stuck. Try a different approach.");
+    const text = third.content[0].text as string;
+    expect(text.startsWith("⚠ REPEATED-CALL WARNING")).toBe(true);
+    expect(text).toContain("plain output");
+    expect(text).not.toContain("You appear to be stuck. Try a different approach.");
     expect(third.content[1]).toEqual({ type: "image", source: "fixture.png" });
   });
 });

@@ -63,7 +63,9 @@ describe("doom loop detection — repeated subsequences", () => {
     }
 
     expect(loopedResult).toBeDefined();
-    expect(loopedResult.content[0].text).toContain("read-c");
-    expect(loopedResult.content[0].text).toContain("You appear to be stuck. Try a different approach.");
+    const text = loopedResult.content[0].text as string;
+    expect(text.startsWith("⚠ ALTERNATING-CALL WARNING")).toBe(true);
+    expect(text).toContain("read-c");
+    expect(text).not.toContain("You appear to be stuck. Try a different approach.");
   });
 });

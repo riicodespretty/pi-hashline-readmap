@@ -10,9 +10,9 @@ import { registerFindTool } from "./src/find.js";
 import { filterBashOutput } from "./src/rtk/bash-filter.js";
 import { stripAnsi } from "./src/rtk/ansi.js";
 import {
-  appendDoomLoopWarning,
   consumeDoomLoopWarning,
   createDoomLoopState,
+  formatDoomLoopMessage,
   recordToolCall,
 } from "./src/doom-loop.js";
 
@@ -95,8 +95,9 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
         return undefined;
       }
       const content = [...event.content];
+      const prefix = `${formatDoomLoopMessage(doomLoop)}\n\n---\n`;
       let textIndex = -1;
-      for (let i = content.length - 1; i >= 0; i--) {
+      for (let i = 0; i < content.length; i++) {
         const item = content[i] as { type?: unknown; text?: unknown };
         if (item.type === "text" && typeof item.text === "string") {
           textIndex = i;
@@ -105,9 +106,9 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
       }
       if (textIndex >= 0) {
         const item = content[textIndex] as { type: "text"; text: string };
-        content[textIndex] = { ...item, text: appendDoomLoopWarning(item.text) };
+        content[textIndex] = { ...item, text: `${prefix}${item.text}` };
       } else {
-        content.push({ type: "text" as const, text: appendDoomLoopWarning("") });
+        content.unshift({ type: "text" as const, text: prefix });
       }
       return {
         content,
@@ -123,21 +124,23 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
       : "";
 
     const command = (event.input as { command?: string }).command ?? "";
-
+    const applyWarning = (body: string): string => {
+      if (!doomLoop) return body;
+      const prefix = `${formatDoomLoopMessage(doomLoop)}\n\n---\n`;
+      return `${prefix}${body}`;
+    };
     if (!BASH_FILTER_ENABLED) {
       const stripped = stripAnsi(originalText);
-      const text = doomLoop ? appendDoomLoopWarning(stripped) : stripped;
+      const text = applyWarning(stripped);
       if (text === originalText) return undefined;
       return { content: [{ type: "text" as const, text }] };
     }
-
     const { output, savedChars } = filterBashOutput(command, originalText);
     if (process.env.PI_RTK_SAVINGS === "1") {
       process.stderr.write(`[RTK] Saved ${savedChars} chars (${command})\n`);
     }
-
     return {
-      content: [{ type: "text" as const, text: doomLoop ? appendDoomLoopWarning(output) : output }],
+      content: [{ type: "text" as const, text: applyWarning(output) }],
     };
   });
 }
