@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative } from "node:path";
 import { resolveToCwd } from "./path-utils.js";
 import { ensureHashInit, formatHashlineDisplay } from "./hashline.js";
-import { buildPtcLine, buildPtcWarning, type PtcLine, type PtcWarning } from "./ptc-value.js";
+import { buildPtcError, buildPtcLine, buildPtcWarning, type PtcLine, type PtcWarning } from "./ptc-value.js";
 import { looksLikeBinary } from "./binary-detect.js";
 import { getOrGenerateMap } from "./map-cache.js";
 import { formatFileMapWithBudget } from "./readmap/formatter.js";
@@ -53,7 +53,7 @@ export async function executeWrite(opts: {
   // Binary detection
   if (looksLikeBinary(Buffer.from(content, "utf-8"))) {
     warnings.push("File content appears to be binary.");
-    ptcWarnings.push(buildPtcWarning("binary", "File content appears to be binary."));
+    ptcWarnings.push(buildPtcWarning("binary-content", "File content appears to be binary."));
     return {
       text: `Wrote ${filePath}\n⚠️ File content appears to be binary — hashlines not generated.`,
       warnings,
@@ -144,6 +144,27 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       if (result.ptcValue.lines.length > 0) {
         options.onFileAnchored?.(absolutePath);
       }
+
+      // Lift binary-content signal into a fatal ptcValue.error envelope so
+      // downstream consumers get the same taxonomy shape as every other tool.
+      // The existing PtcWarning entry is preserved on ptcValue.warnings for
+      // backward compatibility (see AC 12 — warnings namespace alignment).
+      const binaryWarning = result.ptcValue.warnings.find((w) => w.code === "binary-content");
+      if (binaryWarning) {
+        return {
+          content: [{ type: "text" as const, text: result.text }],
+          isError: true,
+          details: {
+            ptcValue: {
+              ...result.ptcValue,
+              ok: false,
+              error: buildPtcError("binary-content", binaryWarning.message),
+            },
+            warnings: result.warnings,
+          },
+        };
+      }
+
       return {
         content: [{ type: "text" as const, text: result.text }],
         details: {

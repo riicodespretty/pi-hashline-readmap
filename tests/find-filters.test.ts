@@ -267,7 +267,11 @@ describe("find filter error handling", () => {
     const msg = result.content?.[0]?.text ?? "";
     expect(msg).toMatch(/modifiedSince/);
     expect(msg).toContain("1y");
-    expect(result.details?.ptcValue).toBeUndefined();
+    expect(result.details?.ptcValue).toMatchObject({
+      tool: "find",
+      ok: false,
+      error: { code: "invalid-params-combo", message: msg },
+  });
   });
   it("malformed minSize returns a tool error naming the field and value", async () => {
     _testable.isFdAvailable = () => false;

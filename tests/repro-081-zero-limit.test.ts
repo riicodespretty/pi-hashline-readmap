@@ -37,7 +37,15 @@ describe("issue #081 regression — zero limit", () => {
 
     expect(numericZero.isError).toBe(true);
     expect(getTextContent(numericZero)).toBe("Invalid limit: expected a positive integer, received 0.");
-    expect(numericZero.details?.ptcValue).toBeUndefined();
+    expect(numericZero.details?.ptcValue).toMatchObject({
+      tool: "read",
+      ok: false,
+      path: filePath,
+      error: {
+        code: "invalid-limit",
+        message: "Invalid limit: expected a positive integer, received 0.",
+      },
+    });
 
     const stringZero = await tool.execute(
       "read-081-zero-limit-string",
@@ -49,6 +57,14 @@ describe("issue #081 regression — zero limit", () => {
 
     expect(stringZero.isError).toBe(true);
     expect(getTextContent(stringZero)).toBe("Invalid limit: expected a positive integer, received 0.");
-    expect(stringZero.details?.ptcValue).toBeUndefined();
+    expect(stringZero.details?.ptcValue).toMatchObject({
+      tool: "read",
+      ok: false,
+      path: filePath,
+      error: {
+        code: "invalid-limit",
+        message: "Invalid limit: expected a positive integer, received 0.",
+      },
+    });
   });
 });

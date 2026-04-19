@@ -165,6 +165,10 @@ describe("find regex invalid input", () => {
     expect(msg).toMatch(/pattern/i);
     expect(msg).toMatch(/regex/i);
     expect(msg).toContain(badPattern);
-    expect(result.details?.ptcValue).toBeUndefined();
+    expect(result.details?.ptcValue).toMatchObject({
+      tool: "find",
+      ok: false,
+      error: { code: "invalid-params-combo", message: msg },
+    });
   });
 });

@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { normalizeToLF, stripBom, hasBareCarriageReturn } from "./edit-diff";
 import { looksLikeBinary } from "./binary-detect";
 import { ensureHashInit, formatHashlineDisplay, escapeControlCharsForDisplay } from "./hashline";
-import { buildPtcLine } from "./ptc-value.js";
+import { buildPtcError, buildPtcLine } from "./ptc-value.js";
 import { buildGrepOutput } from "./grep-output.js";
 import { getOrGenerateMap } from "./map-cache.js";
 import { scopeGrepGroupsToSymbols } from "./grep-symbol-scope.js";
@@ -305,44 +305,72 @@ export function registerGrepTool(pi: ExtensionAPI, options: GrepToolOptions = {}
 				return {
 					content: [{ type: "text", text: context.message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "grep",
+							ok: false,
+							error: buildPtcError("invalid-params-combo", context.message),
+						},
+					},
 				};
 			}
-
 			const limit = coerceObviousBase10Int(rawParams.limit, "limit");
 			if (!limit.ok) {
 				return {
 					content: [{ type: "text", text: limit.message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "grep",
+							ok: false,
+							error: buildPtcError("invalid-limit", limit.message),
+						},
+					},
 				};
 			}
-
 			const scopeContext = coerceObviousBase10Int(rawParams.scopeContext, "scopeContext");
 			if (!scopeContext.ok) {
 				return {
 					content: [{ type: "text", text: scopeContext.message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "grep",
+							ok: false,
+							error: buildPtcError("invalid-params-combo", scopeContext.message),
+						},
+					},
 				};
 			}
-
 			if (scopeContext.value !== undefined && rawParams.scope !== "symbol") {
+				const message = 'Invalid scopeContext: requires scope: "symbol". For normal surrounding-line context outside symbol scope, use the `context` parameter.';
 				return {
 					content: [{
 						type: "text",
-						text: 'Invalid scopeContext: requires scope: "symbol". For normal surrounding-line context outside symbol scope, use the `context` parameter.',
+						text: message,
 					}],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "grep",
+							ok: false,
+							error: buildPtcError("invalid-params-combo", message),
+						},
+					},
 				};
 			}
-
 			if (scopeContext.value !== undefined && scopeContext.value < 0) {
+				const message = `Invalid scopeContext: expected a non-negative integer, received ${scopeContext.value}.`;
 				return {
-					content: [{ type: "text", text: `Invalid scopeContext: expected a non-negative integer, received ${scopeContext.value}.` }],
+					content: [{ type: "text", text: message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "grep",
+							ok: false,
+							error: buildPtcError("invalid-params-combo", message),
+						},
+					},
 				};
 			}
 			const p: GrepParams = {

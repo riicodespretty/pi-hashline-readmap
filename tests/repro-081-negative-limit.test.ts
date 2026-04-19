@@ -38,7 +38,15 @@ describe("issue #081 regression — negative limit", () => {
 
       expect(result.isError).toBe(true);
       expect(getTextContent(result)).toBe("Invalid limit: expected a positive integer, received -10.");
-      expect(result.details?.ptcValue).toBeUndefined();
+      expect(result.details?.ptcValue).toMatchObject({
+        tool: "read",
+        ok: false,
+        path: filePath,
+        error: {
+          code: "invalid-limit",
+          message: "Invalid limit: expected a positive integer, received -10.",
+        },
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

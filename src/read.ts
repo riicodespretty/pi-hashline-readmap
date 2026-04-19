@@ -11,7 +11,7 @@ import { readFileSync } from "fs";
 import { readFile as fsReadFile } from "fs/promises";
 import { normalizeToLF, stripBom, hasBareCarriageReturn } from "./edit-diff";
 import { ensureHashInit, formatHashlineDisplay } from "./hashline";
-import { buildPtcWarning, buildPtcLines, type PtcWarning } from "./ptc-value.js";
+import { buildPtcError, buildPtcWarning, buildPtcLines, type PtcWarning } from "./ptc-value.js";
 import { looksLikeBinary } from "./binary-detect";
 import { resolveToCwd } from "./path-utils";
 import { throwIfAborted } from "./runtime";
@@ -87,7 +87,14 @@ export function registerReadTool(pi: ExtensionAPI, options: ReadToolOptions = {}
 				return {
 					content: [{ type: "text", text: offset.message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "read",
+							ok: false,
+							path: rawParams.path,
+							error: buildPtcError("invalid-offset", offset.message),
+						},
+					},
 				};
 			}
 			const limit = coerceObviousBase10Int(rawParams.limit, "limit");
@@ -95,21 +102,44 @@ export function registerReadTool(pi: ExtensionAPI, options: ReadToolOptions = {}
 				return {
 					content: [{ type: "text", text: limit.message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "read",
+							ok: false,
+							path: rawParams.path,
+							error: buildPtcError("invalid-limit", limit.message),
+						},
+					},
 				};
 			}
 			if (limit.value !== undefined && limit.value < 1) {
+				const message = `Invalid limit: expected a positive integer, received ${limit.value}.`;
 				return {
-					content: [{ type: "text", text: `Invalid limit: expected a positive integer, received ${limit.value}.` }],
+					content: [{ type: "text", text: message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "read",
+							ok: false,
+							path: rawParams.path,
+							error: buildPtcError("invalid-limit", message),
+						},
+					},
 				};
 			}
 			if (offset.value !== undefined && offset.value < 1) {
+				const message = `Invalid offset: expected a positive integer, received ${offset.value}.`;
 				return {
-					content: [{ type: "text", text: `Invalid offset: expected a positive integer, received ${offset.value}.` }],
+					content: [{ type: "text", text: message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "read",
+							ok: false,
+							path: rawParams.path,
+							error: buildPtcError("invalid-offset", message),
+						},
+					},
 				};
 			}
 			const p = {
@@ -129,31 +159,63 @@ export function registerReadTool(pi: ExtensionAPI, options: ReadToolOptions = {}
 
 			throwIfAborted(signal);
 			if (p.symbol && (p.offset !== undefined || p.limit !== undefined)) {
+				const message = "Cannot combine symbol with offset/limit. Use one or the other.";
 				return {
-					content: [{ type: "text", text: "Cannot combine symbol with offset/limit. Use one or the other." }],
+					content: [{ type: "text", text: message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "read",
+							ok: false,
+							path: rawParams.path,
+							error: buildPtcError("invalid-params-combo", message),
+						},
+					},
 				};
 			}
 			if (p.bundle && !p.symbol) {
+				const message = 'Cannot use bundle without symbol. Use read({ path, symbol, bundle: "local" }).';
 				return {
-					content: [{ type: "text", text: 'Cannot use bundle without symbol. Use read({ path, symbol, bundle: "local" }).' }],
+					content: [{ type: "text", text: message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "read",
+							ok: false,
+							path: rawParams.path,
+							error: buildPtcError("invalid-params-combo", message),
+						},
+					},
 				};
 			}
 			if (p.bundle && p.map) {
+				const message = "Cannot combine bundle with map. Use one or the other.";
 				return {
-					content: [{ type: "text", text: "Cannot combine bundle with map. Use one or the other." }],
+					content: [{ type: "text", text: message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "read",
+							ok: false,
+							path: rawParams.path,
+							error: buildPtcError("invalid-params-combo", message),
+						},
+					},
 				};
 			}
 			if (p.map && p.symbol) {
+				const message = "Cannot combine map with symbol. Use one or the other.";
 				return {
-					content: [{ type: "text", text: "Cannot combine map with symbol. Use one or the other." }],
+					content: [{ type: "text", text: message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "read",
+							ok: false,
+							path: rawParams.path,
+							error: buildPtcError("invalid-params-combo", message),
+						},
+					},
 				};
 			}
 			// Delegate images to the built-in read tool
@@ -171,30 +233,69 @@ export function registerReadTool(pi: ExtensionAPI, options: ReadToolOptions = {}
 			} catch (err: any) {
 				const code = err?.code;
 				if (code === "EISDIR") {
+					const message = `Path is a directory: ${rawPath}. Use ls to inspect directories.`;
 					return {
-						content: [{ type: "text", text: `Path is a directory: ${rawPath}. Use ls to inspect directories.` }],
+						content: [{ type: "text", text: message }],
 						isError: true,
-						details: {},
+						details: {
+							ptcValue: {
+								tool: "read",
+								ok: false,
+								path: rawParams.path,
+								error: buildPtcError(
+									"path-is-directory",
+									message,
+									`Use ls(${JSON.stringify(rawPath)}) to inspect directories.`,
+								),
+							},
+						},
 					};
 				}
 				if (code === "EACCES" || code === "EPERM") {
+					const message = `Permission denied — cannot access: ${rawPath}`;
 					return {
-						content: [{ type: "text", text: `Permission denied — cannot access: ${rawPath}` }],
+						content: [{ type: "text", text: message }],
 						isError: true,
-						details: {},
+						details: {
+							ptcValue: {
+								tool: "read",
+								ok: false,
+								path: rawParams.path,
+								error: buildPtcError("permission-denied", message),
+							},
+						},
 					};
 				}
 				if (code === "ENOENT") {
+					const message = `File not found: ${rawPath}`;
 					return {
-						content: [{ type: "text", text: `File not found: ${rawPath}` }],
+						content: [{ type: "text", text: message }],
 						isError: true,
-						details: {},
+						details: {
+							ptcValue: {
+								tool: "read",
+								ok: false,
+								path: rawParams.path,
+								error: buildPtcError("file-not-found", message),
+							},
+						},
 					};
 				}
+				const message = `File not readable: ${rawPath}${err?.message ? ` — ${err.message}` : ""}`;
 				return {
-					content: [{ type: "text", text: `File not found: ${rawPath}` }],
+					content: [{ type: "text", text: message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "read",
+							ok: false,
+							path: rawParams.path,
+							error: buildPtcError("fs-error", message, undefined, {
+								fsCode: code,
+								fsMessage: err?.message,
+							}),
+						},
+					},
 				};
 			}
 			const hasBinaryContent = looksLikeBinary(rawBuffer);
@@ -206,10 +307,18 @@ export function registerReadTool(pi: ExtensionAPI, options: ReadToolOptions = {}
 			let startLine = p.offset !== undefined ? p.offset : 1;
 			let endIdx = p.limit !== undefined ? Math.min(startLine - 1 + p.limit, total) : total;
 			if (p.offset !== undefined && startLine > total) {
+				const message = `[offset ${p.offset} is past end of file (${total} lines)]`;
 				return {
-					content: [{ type: "text", text: `[offset ${p.offset} is past end of file (${total} lines)]` }],
+					content: [{ type: "text", text: message }],
 					isError: true,
-					details: {},
+					details: {
+						ptcValue: {
+							tool: "read",
+							ok: false,
+							path: rawParams.path,
+							error: buildPtcError("offset-past-end", message),
+						},
+					},
 				};
 			}
 			let symbolMatch: SymbolMatch | undefined;

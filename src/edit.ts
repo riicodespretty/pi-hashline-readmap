@@ -4,12 +4,13 @@ import type { Static } from "@sinclair/typebox";
 import { readFileSync } from "fs";
 import { readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
 import { detectLineEnding, generateCompactOrFullDiff, normalizeToLF, replaceText, restoreLineEndings, stripBom } from "./edit-diff";
-import { applyHashlineEdits, computeLineHash, ensureHashInit, parseLineRef, type HashlineEditItem, escapeControlCharsForDisplay } from "./hashline";
+import { HashlineMismatchError, applyHashlineEdits, computeLineHash, ensureHashInit, parseLineRef, type HashlineEditItem, escapeControlCharsForDisplay } from "./hashline";
 import { resolveToCwd } from "./path-utils";
 import { throwIfAborted } from "./runtime";
 import { buildEditOutput } from "./edit-output.js";
 import { classifyEdit, isDifftAvailable, runDifftastic } from "./edit-classify.js";
 import type { SemanticSummary } from "./ptc-value.js";
+import { buildPtcError } from "./ptc-value.js";
 import { Text } from "@mariozechner/pi-tui";
 import { formatEditCallText, formatEditResultText } from "./edit-render-helpers.js";
 
@@ -90,7 +91,20 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				return {
 					content: [{ type: "text", text: message }],
 					isError: true,
-					details: { diff: "", firstChangedLine: undefined } as EditToolDetails,
+					details: {
+						diff: "",
+						firstChangedLine: undefined,
+						ptcValue: {
+							tool: "edit",
+							ok: false,
+							path: absolutePath,
+							error: buildPtcError(
+								"file-not-read",
+								message,
+								`Call read(${JSON.stringify(rawPath)}) first, or use grep, ast_search, or write to produce fresh anchors for this file.`,
+							),
+						},
+					} as EditToolDetails & { ptcValue: any },
 				};
 			}
 			const legacyOldText =
@@ -112,9 +126,22 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			let legacyNormalizationWarning: string | undefined;
 			if (!hasEditsInput && hasLegacyInput) {
 				if (legacyOldText === undefined || legacyNewText === undefined) {
-					throw new Error(
-						"Legacy edit input requires both oldText/newText (or old_text/new_text) when 'edits' is omitted.",
-					);
+					const message =
+						"Legacy edit input requires both oldText/newText (or old_text/new_text) when 'edits' is omitted.";
+					return {
+						content: [{ type: "text", text: message }],
+						isError: true,
+						details: {
+							diff: "",
+							firstChangedLine: undefined,
+							ptcValue: {
+								tool: "edit",
+								ok: false,
+								path: absolutePath,
+								error: buildPtcError("invalid-edit-variant", message),
+							},
+						} as EditToolDetails & { ptcValue: any },
+					};
 				}
 				edits = [
 					{
@@ -133,7 +160,16 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				return {
 					content: [{ type: "text", text: "No edits provided." }],
 					isError: true,
-					details: { diff: "", firstChangedLine: undefined } as EditToolDetails,
+					details: {
+						diff: "",
+						firstChangedLine: undefined,
+						ptcValue: {
+							tool: "edit",
+							ok: false,
+							path: absolutePath,
+							error: buildPtcError("invalid-edit-variant", "No edits provided."),
+						},
+					} as EditToolDetails & { ptcValue: any },
 				};
 			}
 
@@ -142,14 +178,38 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				throwIfAborted(signal);
 				const e = edits[i] as Record<string, unknown>;
 				if (("old_text" in e || "new_text" in e) && !("replace" in e)) {
-					throw new Error(
-						`edits[${i}] has top-level 'old_text'/'new_text'. Use {replace: {old_text, new_text}} or {set_line}, {replace_lines}, {insert_after}.`,
-					);
+					const message = `edits[${i}] has top-level 'old_text'/'new_text'. Use {replace: {old_text, new_text}} or {set_line}, {replace_lines}, {insert_after}.`;
+					return {
+						content: [{ type: "text", text: message }],
+						isError: true,
+						details: {
+							diff: "",
+							firstChangedLine: undefined,
+							ptcValue: {
+								tool: "edit",
+								ok: false,
+								path: absolutePath,
+								error: buildPtcError("invalid-edit-variant", message),
+							},
+						} as EditToolDetails & { ptcValue: any },
+					};
 				}
 				if ("diff" in e) {
-					throw new Error(
-						`edits[${i}] contains 'diff' from patch mode. Hashline edit expects one of: {set_line}, {replace_lines}, {insert_after}, {replace}.`,
-					);
+					const message = `edits[${i}] contains 'diff' from patch mode. Hashline edit expects one of: {set_line}, {replace_lines}, {insert_after}, {replace}.`;
+					return {
+						content: [{ type: "text", text: message }],
+						isError: true,
+						details: {
+							diff: "",
+							firstChangedLine: undefined,
+							ptcValue: {
+								tool: "edit",
+								ok: false,
+								path: absolutePath,
+								error: buildPtcError("invalid-edit-variant", message),
+							},
+						} as EditToolDetails & { ptcValue: any },
+					};
 				}
 				const variantCount =
 					Number("set_line" in e) +
@@ -157,9 +217,21 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 					Number("insert_after" in e) +
 					Number("replace" in e);
 				if (variantCount !== 1) {
-					throw new Error(
-						`edits[${i}] must contain exactly one of: 'set_line', 'replace_lines', 'insert_after', 'replace'. Got: [${Object.keys(e).join(", ")}].`,
-					);
+					const message = `edits[${i}] must contain exactly one of: 'set_line', 'replace_lines', 'insert_after', 'replace'. Got: [${Object.keys(e).join(", ")}].`;
+					return {
+						content: [{ type: "text", text: message }],
+						isError: true,
+						details: {
+							diff: "",
+							firstChangedLine: undefined,
+							ptcValue: {
+								tool: "edit",
+								ok: false,
+								path: absolutePath,
+								error: buildPtcError("invalid-edit-variant", message),
+							},
+						} as EditToolDetails & { ptcValue: any },
+					};
 				}
 			}
 
@@ -175,16 +247,56 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				rawBuffer = await fsReadFile(absolutePath);
 			} catch (err: any) {
 				const code = err?.code;
+				let errCode: string;
+				let message: string;
+				let hint: string | undefined;
+				let errorDetails: { fsCode?: string; fsMessage?: string } | undefined;
 				if (code === "EISDIR") {
-					throw new Error(`Path is a directory: ${path}`);
+					errCode = "path-is-directory";
+					message = `Path is a directory: ${path}`;
+					hint = `Use ls(${JSON.stringify(path)}) to inspect directories.`;
+				} else if (code === "ENOENT") {
+					errCode = "file-not-found";
+					message = `File not found: ${path}`;
+				} else if (code === "EACCES" || code === "EPERM") {
+					errCode = "permission-denied";
+					message = `Permission denied: ${path}`;
+				} else {
+					errCode = "fs-error";
+					message = `File not readable: ${path}${err?.message ? ` — ${err.message}` : ""}`;
+					errorDetails = { fsCode: code, fsMessage: err?.message };
 				}
-				if (code === "ENOENT") {
-					throw new Error(`File not found: ${path}`);
-				}
-				throw new Error(`File not readable: ${path}`);
+				return {
+					content: [{ type: "text", text: message }],
+					isError: true,
+					details: {
+						diff: "",
+						firstChangedLine: undefined,
+						ptcValue: {
+							tool: "edit",
+							ok: false,
+							path: absolutePath,
+							error: buildPtcError(errCode, message, hint, errorDetails),
+						},
+					} as EditToolDetails & { ptcValue: any },
+				};
 			}
 			if (isBinaryBuffer(rawBuffer)) {
-				throw new Error(`Cannot edit binary file: ${path}`);
+				const message = `Cannot edit binary file: ${path}`;
+				return {
+					content: [{ type: "text", text: message }],
+					isError: true,
+					details: {
+						diff: "",
+						firstChangedLine: undefined,
+						ptcValue: {
+							tool: "edit",
+							ok: false,
+							path: absolutePath,
+							error: buildPtcError("binary-file", message),
+						},
+					} as EditToolDetails & { ptcValue: any },
+				};
 			}
 			throwIfAborted(signal);
 			const raw = rawBuffer.toString("utf-8");
@@ -193,14 +305,69 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			const originalNormalized = normalizeToLF(content);
 			let result = originalNormalized;
 
-			const anchorResult = applyHashlineEdits(result, anchorEdits, signal);
+			let anchorResult;
+			try {
+				anchorResult = applyHashlineEdits(result, anchorEdits, signal);
+			} catch (err) {
+				if (err instanceof HashlineMismatchError) {
+					return {
+						content: [{ type: "text", text: err.message }],
+						isError: true,
+						details: {
+							diff: "",
+							firstChangedLine: undefined,
+							ptcValue: {
+								tool: "edit",
+								ok: false,
+								path: absolutePath,
+								error: buildPtcError("hash-mismatch", err.message, undefined, {
+									updatedAnchors: err.updatedAnchors,
+								}),
+							},
+						} as EditToolDetails & { ptcValue: any },
+					};
+				}
+				throw err;
+			}
 			result = anchorResult.content;
 
 			for (const r of replaceEdits) {
 				throwIfAborted(signal);
-				if (!r.replace.old_text.length) throw new Error("replace.old_text must not be empty.");
+				if (!r.replace.old_text.length) {
+					const message = "replace.old_text must not be empty.";
+					return {
+						content: [{ type: "text", text: message }],
+						isError: true,
+						details: {
+							diff: "",
+							firstChangedLine: undefined,
+							ptcValue: {
+								tool: "edit",
+								ok: false,
+								path: absolutePath,
+								error: buildPtcError("invalid-edit-variant", message),
+							},
+						} as EditToolDetails & { ptcValue: any },
+					};
+				}
 				const rep = replaceText(result, r.replace.old_text, r.replace.new_text, { all: r.replace.all ?? false });
-				if (!rep.count) throw new Error(`Could not find text to replace in ${path}.`);
+				if (!rep.count) {
+					const message = `Could not find text to replace in ${path}.`;
+					return {
+						content: [{ type: "text", text: message }],
+						isError: true,
+						details: {
+							diff: "",
+							firstChangedLine: undefined,
+							ptcValue: {
+								tool: "edit",
+								ok: false,
+								path: absolutePath,
+								error: buildPtcError("text-not-found", message),
+							},
+						} as EditToolDetails & { ptcValue: any },
+					};
+				}
 				result = rep.content;
 			}
 
@@ -244,14 +411,51 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 						diagnostic += `\nThe file currently contains:\n${preview}\nYour edits were normalized back to the original content. Ensure your replacement changes actual code, not just formatting.`;
 					}
 				}
-				throw new Error(diagnostic);
+				return {
+					content: [{ type: "text", text: diagnostic }],
+					isError: true,
+					details: {
+						diff: "",
+						firstChangedLine: undefined,
+						ptcValue: {
+							tool: "edit",
+							ok: false,
+							path: absolutePath,
+							error: buildPtcError("no-op", diagnostic),
+						},
+					} as EditToolDetails & { ptcValue: any },
+				};
 			}
 
 			throwIfAborted(signal);
 			try {
 				await fsWriteFile(absolutePath, bom + restoreLineEndings(result, originalEnding), "utf-8");
 			} catch (err: any) {
-				throw wrapWriteError(err, path);
+				const wrapped = wrapWriteError(err, path);
+				const code =
+					err?.code === "EACCES" || err?.code === "EPERM"
+						? "permission-denied"
+						: err?.code === "ENOENT"
+							? "file-not-found"
+							: "fs-error";
+				const message =
+					code === "fs-error" && err?.message ? `${wrapped.message} — ${err.message}` : wrapped.message;
+				return {
+					content: [{ type: "text", text: message }],
+					isError: true,
+					details: {
+						diff: "",
+						firstChangedLine: undefined,
+						ptcValue: {
+							tool: "edit",
+							ok: false,
+							path: absolutePath,
+							error: buildPtcError(code, message, undefined, code === "fs-error"
+								? { fsCode: err?.code, fsMessage: err?.message }
+								: undefined),
+						},
+					} as EditToolDetails & { ptcValue: any },
+				};
 			}
 
 			const diffResult = generateCompactOrFullDiff(originalNormalized, result);

@@ -4,6 +4,7 @@ import { Type } from "@sinclair/typebox";
 import { readFileSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { resolveToCwd } from "./path-utils.js";
+import { buildPtcError } from "./ptc-value.js";
 
 const MAX_BYTES = 50 * 1024; // 50 KB
 const DEFAULT_LIMIT = 500;
@@ -92,19 +93,52 @@ export function registerLsTool(pi: ExtensionAPI) {
       let pathStat;
       try {
         pathStat = await stat(targetPath);
-      } catch {
+      } catch (err: any) {
+        const target = params.path ?? targetPath;
+        const code =
+          err?.code === "EACCES" || err?.code === "EPERM"
+            ? "permission-denied"
+            : err?.code === "ENOENT"
+              ? "path-not-found"
+              : "fs-error";
+        const message =
+          code === "permission-denied"
+            ? `Error: permission denied for path '${target}'`
+            : code === "path-not-found"
+              ? `Error: path '${target}' does not exist`
+              : `Error: could not access path '${target}': ${err?.message ?? String(err)}`;
         return {
-          content: [{ type: "text" as const, text: `Error: path '${params.path ?? targetPath}' does not exist` }],
+          content: [{ type: "text" as const, text: message }],
           isError: true,
-          details: {},
+          details: {
+            ptcValue: {
+              tool: "ls",
+              ok: false,
+              path: target,
+              error: buildPtcError(code, message, undefined, code === "fs-error"
+                ? { fsCode: err?.code, fsMessage: err?.message }
+                : undefined),
+            },
+          },
         };
       }
-
       if (!pathStat.isDirectory()) {
+        const message = `Error: '${params.path ?? targetPath}' is a file, not a directory. Use read to inspect files.`;
         return {
-          content: [{ type: "text" as const, text: `Error: '${params.path ?? targetPath}' is a file, not a directory. Use read to inspect files.` }],
+          content: [{ type: "text" as const, text: message }],
           isError: true,
-          details: {},
+          details: {
+            ptcValue: {
+              tool: "ls",
+              ok: false,
+              path: params.path ?? targetPath,
+              error: buildPtcError(
+                "path-not-directory",
+                message,
+                `Use read(${JSON.stringify(params.path ?? targetPath)}) to inspect files.`,
+              ),
+            },
+          },
         };
       }
 

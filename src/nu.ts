@@ -6,6 +6,7 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { buildPtcError } from "./ptc-value.js";
 import { stripAnsi } from "./rtk/ansi.js";
 
 const MAX_LINES = 2000;
@@ -314,12 +315,69 @@ export function registerNuTool(pi: ExtensionAPI): NuToolDefinition | false {
           ? (text) => onUpdate({ content: [{ type: "text", text }], details: {} })
           : undefined,
       });
+
+      const text = augmentNuOutput(result);
+      const details = {
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        shell: "nushell",
+      };
+
+      let ptcValue;
+      if (result.timedOut) {
+        ptcValue = {
+          tool: "nu",
+          ok: false,
+          error: buildPtcError(
+            "nu-timed-out",
+            text,
+            `Increase timeout via the 'timeout' parameter (current: ${params.timeout ?? 30}s).`,
+            { exitCode: result.exitCode, timedOut: true },
+          ),
+        };
+      } else if (/Error writing temp file:/.test(result.output)) {
+        ptcValue = {
+          tool: "nu",
+          ok: false,
+          error: buildPtcError(
+            "nu-temp-file-error",
+            text,
+            undefined,
+            { exitCode: result.exitCode, timedOut: false },
+          ),
+        };
+      } else if (
+        /Error spawning nushell:/.test(result.output) || /not found in PATH/.test(result.output)
+      ) {
+        ptcValue = {
+          tool: "nu",
+          ok: false,
+          error: buildPtcError(
+            "nu-spawn-error",
+            text,
+            "Install nushell: https://www.nushell.sh/",
+            { exitCode: result.exitCode, timedOut: false },
+          ),
+        };
+      } else if (result.exitCode !== 0 || result.exitCode === null) {
+        ptcValue = {
+          tool: "nu",
+          ok: false,
+          error: buildPtcError(
+            "nu-non-zero-exit",
+            text,
+            undefined,
+            { exitCode: result.exitCode, timedOut: false },
+          ),
+        };
+      } else {
+        ptcValue = { tool: "nu", ok: true };
+      }
       return {
-        content: [{ type: "text" as const, text: augmentNuOutput(result) }],
+        content: [{ type: "text" as const, text }],
         details: {
-          exitCode: result.exitCode,
-          timedOut: result.timedOut,
-          shell: "nushell",
+          ...details,
+          ptcValue,
         },
       };
     },

@@ -37,8 +37,15 @@ describe("issue #081 regression — invalid offset", () => {
 
     expect(negativeOffset.isError).toBe(true);
     expect(getTextContent(negativeOffset)).toBe("Invalid offset: expected a positive integer, received -5.");
-    expect(negativeOffset.details?.ptcValue).toBeUndefined();
-
+    expect(negativeOffset.details?.ptcValue).toEqual({
+      tool: "read",
+      ok: false,
+      path: filePath,
+      error: {
+        code: "invalid-offset",
+        message: "Invalid offset: expected a positive integer, received -5.",
+      },
+    });
     const zeroOffset = await tool.execute(
       "read-081-zero-offset",
       { path: filePath, offset: "0" },
@@ -46,9 +53,16 @@ describe("issue #081 regression — invalid offset", () => {
       () => {},
       { cwd: process.cwd() },
     );
-
     expect(zeroOffset.isError).toBe(true);
     expect(getTextContent(zeroOffset)).toBe("Invalid offset: expected a positive integer, received 0.");
-    expect(zeroOffset.details?.ptcValue).toBeUndefined();
+    expect(zeroOffset.details?.ptcValue).toEqual({
+      tool: "read",
+      ok: false,
+      path: filePath,
+      error: {
+        code: "invalid-offset",
+        message: "Invalid offset: expected a positive integer, received 0.",
+      },
+    });
   });
 });

@@ -23,6 +23,13 @@ export interface PtcWarning {
   otherCandidates?: PtcWarningSymbol[];
 }
 
+export interface PtcError {
+  code: string;
+  message: string;
+  hint?: string;
+  details?: unknown;
+}
+
 export interface PtcRange {
   startLine: number;
   endLine: number;
@@ -81,6 +88,20 @@ export function buildPtcWarning(
   metadata: Omit<PtcWarning, "code" | "message"> = {},
 ): PtcWarning {
   return { code, message, ...metadata };
+}
+
+export function buildPtcError(
+  code: string,
+  message: string,
+  hint?: string,
+  details?: unknown,
+): PtcError {
+  return {
+    code,
+    message,
+    ...(hint !== undefined ? { hint } : {}),
+    ...(details !== undefined ? { details } : {}),
+  };
 }
 
 export function buildPtcRange(startLine: number, endLine: number, totalLines?: number): PtcRange {

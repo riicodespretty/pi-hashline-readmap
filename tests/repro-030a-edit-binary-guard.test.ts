@@ -49,17 +49,18 @@ describe("Bug #030a: binary file guard in edit", () => {
     registerEditTool(mockPi as any);
     if (!capturedTool) throw new Error("edit tool was not registered");
 
-    await expect(
-      capturedTool.execute(
-        "test-call",
-        {
-          path: binaryFile,
-          edits: [{ set_line: { anchor: "1:00", new_text: "modified" } }],
-        },
-        new AbortController().signal,
-        () => {},
-        { cwd: process.cwd() },
-      ),
-    ).rejects.toThrow(/Cannot edit binary file/);
+    const result = await capturedTool.execute(
+      "test-call",
+      {
+        path: binaryFile,
+        edits: [{ set_line: { anchor: "1:00", new_text: "modified" } }],
+      },
+      new AbortController().signal,
+      () => {},
+      { cwd: process.cwd() },
+    );
+    expect(result.isError).toBe(true);
+    const text = result.content.find((c: any) => c.type === "text")?.text ?? "";
+    expect(text).toMatch(/Cannot edit binary file/);
   });
 });

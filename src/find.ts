@@ -8,6 +8,7 @@ import { resolve, relative, join } from "node:path";
 import { resolveToCwd } from "./path-utils.js";
 import * as findStat from "./find-stat.js";
 import { parseRelativeOrIsoDate, parseSize } from "./find-parsers.js";
+import { buildPtcError } from "./ptc-value.js";
 
 const MAX_BYTES = 50 * 1024; // 50 KB
 const DEFAULT_LIMIT = 1000;
@@ -373,17 +374,51 @@ export function registerFindTool(pi: ExtensionAPI) {
       try {
         const s = await stat(searchPath);
         if (!s.isDirectory()) {
+          const message = `Error: '${params.path ?? searchPath}' is not a directory`;
           return {
-            content: [{ type: "text" as const, text: `Error: '${params.path ?? searchPath}' is not a directory` }],
+            content: [{ type: "text" as const, text: message }],
             isError: true,
-            details: {},
+            details: {
+              ptcValue: {
+                tool: "find",
+                ok: false,
+                path: params.path ?? searchPath,
+                error: buildPtcError(
+                  "path-not-directory",
+                  message,
+                  `Use ls on a directory, or read(${JSON.stringify(params.path ?? searchPath)}) for a single file.`,
+                ),
+              },
+            },
           };
         }
-      } catch {
+      } catch (err: any) {
+        const target = params.path ?? searchPath;
+        const code =
+          err?.code === "EACCES" || err?.code === "EPERM"
+            ? "permission-denied"
+            : err?.code === "ENOENT"
+              ? "path-not-found"
+              : "fs-error";
+        const message =
+          code === "permission-denied"
+            ? `Error: permission denied for path '${target}'`
+            : code === "path-not-found"
+              ? `Error: path '${target}' does not exist`
+              : `Error: could not access path '${target}': ${err?.message ?? String(err)}`;
         return {
-          content: [{ type: "text" as const, text: `Error: path '${params.path ?? searchPath}' does not exist` }],
+          content: [{ type: "text" as const, text: message }],
           isError: true,
-          details: {},
+          details: {
+            ptcValue: {
+              tool: "find",
+              ok: false,
+              path: target,
+              error: buildPtcError(code, message, undefined, code === "fs-error"
+                ? { fsCode: err?.code, fsMessage: err?.message }
+                : undefined),
+            },
+          },
         };
       }
 
@@ -397,17 +432,20 @@ export function registerFindTool(pi: ExtensionAPI) {
         try {
           re = new RegExp(pattern);
         } catch (err) {
+          const message =
+            `Error: invalid regex for fields 'pattern'/'regex' ` +
+            `(${JSON.stringify(pattern)}): ${(err as Error).message}`;
           return {
-            content: [
-              {
-                type: "text" as const,
-                text:
-                  `Error: invalid regex for fields 'pattern'/'regex' ` +
-                  `(${JSON.stringify(pattern)}): ${(err as Error).message}`,
-              },
-            ],
+            content: [{ type: "text" as const, text: message }],
             isError: true,
-            details: {},
+            details: {
+              ptcValue: {
+                tool: "find",
+                ok: false,
+                path: params.path ?? searchPath,
+                error: buildPtcError("invalid-params-combo", message),
+              },
+            },
           };
         }
         matcher = (basename: string) => re.test(basename);
@@ -439,10 +477,18 @@ export function registerFindTool(pi: ExtensionAPI) {
           maxSizeBytes = parseSize("maxSize", params.maxSize);
         }
       } catch (err) {
+        const message = `Error: ${(err as Error).message}`;
         return {
-          content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+          content: [{ type: "text" as const, text: message }],
           isError: true,
-          details: {},
+          details: {
+            ptcValue: {
+              tool: "find",
+              ok: false,
+              path: params.path ?? searchPath,
+              error: buildPtcError("invalid-params-combo", message),
+            },
+          },
         };
       }
       const sortBy = params.sortBy ?? "name";

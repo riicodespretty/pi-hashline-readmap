@@ -88,17 +88,14 @@ describe("edit replace hint", () => {
 
   it("suppresses the info line for replace no-op results", async () => {
     const filePath = makeFixture("const value = 1;\n");
-    let error: unknown;
-    try {
-      await callEditTool({
-        path: filePath,
-        edits: [{ replace: { old_text: "const value = 1;", new_text: "const value = 1;" } }],
-      });
-    } catch (err) {
-      error = err;
-    }
+  const result = await callEditTool({
+    path: filePath,
+    edits: [{ replace: { old_text: "const value = 1;", new_text: "const value = 1;" } }],
+  });
 
-    expect(String((error as any)?.message ?? error)).toContain("No changes made to");
-    expect(String((error as any)?.message ?? error)).not.toContain(INFO_HINT);
+  expect(result.isError).toBe(true);
+  const text = getTextContent(result);
+  expect(text).toContain("No changes made to");
+  expect(text).not.toContain(INFO_HINT);
 });
 });

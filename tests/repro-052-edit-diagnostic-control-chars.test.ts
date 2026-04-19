@@ -28,16 +28,15 @@ describe("Bug #052: edit no-op diagnostics escape control characters", () => {
     const { computeLineHash } = await import("../src/hashline.js");
     const anchor = `2:${computeLineHash(2, "line with \x07 bell")}`;
 
-    try {
-      await callEditTool({
-        path: filePath,
-        edits: [{ set_line: { anchor, new_text: "line with \x07 bell" } }],
-      });
-      expect.unreachable("Expected no-op diagnostic error");
-    } catch (err: any) {
-      expect(err.message).toContain("No changes made");
-      expect(err.message).toContain("\\u0007");
-      expect(CONTROL_CHAR_RE.test(err.message)).toBe(false);
-    }
+    const result = await callEditTool({
+      path: filePath,
+      edits: [{ set_line: { anchor, new_text: "line with \x07 bell" } }],
+    });
+
+    expect(result.isError).toBe(true);
+    const text = result.content.find((c: any) => c.type === "text")?.text ?? "";
+    expect(text).toContain("No changes made");
+    expect(text).toContain("\\u0007");
+    expect(CONTROL_CHAR_RE.test(text)).toBe(false);
   });
 });

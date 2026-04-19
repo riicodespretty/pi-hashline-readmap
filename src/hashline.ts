@@ -7,6 +7,7 @@
 
 import xxhashWasm from "xxhash-wasm";
 import { throwIfAborted } from "./runtime";
+import type { PtcLine } from "./ptc-value.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -21,6 +22,16 @@ interface HashMismatch {
 	expected: string;
 	actual: string;
 	expectedContent?: string;
+}
+
+export class HashlineMismatchError extends Error {
+	readonly updatedAnchors: PtcLine[];
+
+	constructor(message: string, updatedAnchors: PtcLine[]) {
+		super(message);
+		this.name = "HashlineMismatchError";
+		this.updatedAnchors = updatedAnchors;
+	}
 }
 
 type ParsedRef = { line: number; hash: string; content?: string };
@@ -156,23 +167,35 @@ function findSimilarLines(
 		return `  ${c.line}:${hash}|${escapeControlCharsForDisplay(c.content)}`;
 	});
 }
-function formatMismatchError(mismatches: HashMismatch[], fileLines: string[], relocationWindow: number): string {
+function formatMismatchError(
+	mismatches: HashMismatch[],
+	fileLines: string[],
+	relocationWindow: number,
+): { message: string; updatedAnchors: PtcLine[] } {
 	const mismatchSet = new Map<number, HashMismatch>();
 	for (const m of mismatches) mismatchSet.set(m.line, m);
-
+	const updatedAnchors: PtcLine[] = mismatches.map((m) => {
+		const raw = fileLines[m.line - 1] ?? "";
+		const hash = computeLineHash(m.line, raw);
+		return {
+			line: m.line,
+			hash,
+			anchor: `${m.line}:${hash}`,
+			raw,
+			display: escapeControlCharsForDisplay(raw),
+		};
+	});
 	const displayLines = new Set<number>();
 	for (const m of mismatches) {
 		for (let i = Math.max(1, m.line - 2); i <= Math.min(fileLines.length, m.line + 2); i++) {
 			displayLines.add(i);
 		}
 	}
-
 	const sorted = [...displayLines].sort((a, b) => a - b);
 	const out: string[] = [
 		`${mismatches.length} line${mismatches.length > 1 ? "s have" : " has"} changed since last read. Auto-relocation checks only within ±${relocationWindow} lines of each anchor. Use the updated LINE:HASH references shown below (>>> marks changed lines).`,
 		"",
 	];
-
 	let prev = -1;
 	for (const num of sorted) {
 		if (prev !== -1 && num > prev + 1) out.push("    ...");
@@ -186,7 +209,6 @@ function formatMismatchError(mismatches: HashMismatch[], fileLines: string[], re
 				: `    ${prefix}|${escapeControlCharsForDisplay(content)}`,
 		);
 	}
-
 	const withContent = mismatches.filter((m) => m.expectedContent !== undefined);
 	if (withContent.length > 0) {
 		for (const m of withContent) {
@@ -199,7 +221,7 @@ function formatMismatchError(mismatches: HashMismatch[], fileLines: string[], re
 		}
 	}
 
-	return out.join("\n");
+	return { message: out.join("\n"), updatedAnchors };
 }
 
 // ─── DST preprocessing helpers ──────────────────────────────────────────
@@ -507,7 +529,10 @@ export function applyHashlineEdits(
 			}
 		}
 	}
-	if (mismatches.length) throw new Error(formatMismatchError(mismatches, fileLines, relocationWindow));
+	if (mismatches.length) {
+		const formatted = formatMismatchError(mismatches, fileLines, relocationWindow);
+		throw new HashlineMismatchError(formatted.message, formatted.updatedAnchors);
+	}
 
 	// Recompute after potential relocation
 	explicitlyTouchedLines = collectExplicitlyTouchedLines();

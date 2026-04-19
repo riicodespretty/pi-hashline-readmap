@@ -7,7 +7,7 @@ import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { normalizeToLF, stripBom } from "./edit-diff.js";
 import { ensureHashInit } from "./hashline.js";
-import { buildPtcLine } from "./ptc-value.js";
+import { buildPtcError, buildPtcLine } from "./ptc-value.js";
 import { resolveToCwd } from "./path-utils.js";
 import { buildSgOutput } from "./sg-output.js";
 
@@ -223,16 +223,34 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
         };
       } catch (err: any) {
         if (err?.code === "ENOENT") {
+          const message = "ast-grep (sg) is not installed. Run: brew install ast-grep";
           return {
-            content: [{ type: "text", text: "ast-grep (sg) is not installed. Run: brew install ast-grep" }],
+            content: [{ type: "text", text: message }],
             isError: true,
-            details: {},
+            details: {
+              ptcValue: {
+                tool: "ast_search",
+                ok: false,
+                error: buildPtcError(
+                  "sg-not-installed",
+                  message,
+                  "Install with: brew install ast-grep (or see https://ast-grep.github.io)",
+                ),
+              },
+            },
           };
         }
+        const message = String(err?.stderr || err?.message || err);
         return {
-          content: [{ type: "text", text: String(err?.stderr || err?.message || err) }],
+          content: [{ type: "text", text: message }],
           isError: true,
-          details: {},
+          details: {
+            ptcValue: {
+              tool: "ast_search",
+              ok: false,
+              error: buildPtcError("sg-execution-error", message),
+            },
+          },
         };
       }
     },

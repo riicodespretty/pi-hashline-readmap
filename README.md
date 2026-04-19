@@ -352,6 +352,46 @@ Includes grouped match ranges and anchored lines.
 ### `edit`
 Includes summary, diff, changed line, warnings, no-op metadata, and semantic edit classification.
 
+### `ptcValue.error`
+When a tool fails, its result includes a structured `error` envelope inside `ptcValue` so downstream consumers (`pi-prompt-assembler`, agent retry loops) can dispatch programmatically without parsing free text.
+
+**Shape:**
+
+```ts
+interface PtcError {
+  code: string;       // stable, kebab-case, drawn from src/ptc-error-codes.ts
+  message: string;    // matches (or is a clean superset of) content[0].text
+  hint?: string;      // concrete next-step recovery suggestion, when one exists
+  details?: unknown;  // tool-specific structured data (e.g. updatedAnchors for hash-mismatch)
+}
+```
+
+**Envelope on error:**
+
+```ts
+{
+  isError: true,                         // (or unset for nu — see below)
+  content: [{ type: "text", text: ... }],
+  details: {
+    ptcValue: {
+      tool: "<toolName>",                // read | edit | grep | ast_search | find | ls | write | nu
+      ok: false,
+      path?: string,                     // when the failure pertains to a specific path
+      error: PtcError,
+    },
+  },
+}
+```
+
+**Codes:** see [`src/ptc-error-codes.ts`](src/ptc-error-codes.ts) for the full taxonomy. Adding a new error code requires extending that file.
+
+**Warnings vs errors:**
+
+- **`ptcValue.warnings: PtcWarning[]`** — non-fatal. The tool produced its primary result but flagged something the agent should know (e.g. fuzzy symbol match, binary content written). `PtcWarning.code` shares the same kebab-case namespace as `PtcError.code`.
+- **`ptcValue.error: PtcError`** — fatal. The tool could not produce its primary result.
+
+**Special case — `nu`:** the nu tool always returns `isError` falsy and surfaces failure exclusively through `ptcValue.ok === false` plus `ptcValue.error`. This preserves backward-compatible streaming behavior while still giving consumers a uniform structured handle.
+
 Hashes and anchors are tied to raw file content. Display fields are escaped for safe rendering; raw fields preserve the underlying text.
 
 ### PTC tool policy contract

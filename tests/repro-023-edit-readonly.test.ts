@@ -52,17 +52,18 @@ describe("Bug #023: edit readonly file -> permission denied", () => {
 		if (!capturedTool) throw new Error("edit tool was not registered");
 
 		const hash1 = computeLineHash(1, "line1");
-		await expect(
-			capturedTool.execute(
-				"test-call",
-				{
-					path: readonlyFile,
-					edits: [{ set_line: { anchor: `1:${hash1}`, new_text: "modified" } }],
-				},
-				new AbortController().signal,
-				() => {},
-				{ cwd: process.cwd() },
-			),
-		).rejects.toThrow(/Permission denied/);
+		const result = await capturedTool.execute(
+			"test-call",
+			{
+				path: readonlyFile,
+				edits: [{ set_line: { anchor: `1:${hash1}`, new_text: "modified" } }],
+			},
+			new AbortController().signal,
+			() => {},
+			{ cwd: process.cwd() },
+		);
+		expect(result.isError).toBe(true);
+		const text = result.content.find((c: any) => c.type === "text")?.text ?? "";
+		expect(text).toMatch(/Permission denied/);
 	});
 });
