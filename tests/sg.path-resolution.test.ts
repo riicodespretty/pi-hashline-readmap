@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import * as cp from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 vi.mock("node:child_process", () => ({
   execFile: vi.fn(),
@@ -18,23 +21,29 @@ describe("sg path resolution", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("resolves params.path relative to ctx.cwd", async () => {
-    const tool = await getSgTool();
+    const dir = mkdtempSync(join(tmpdir(), "sg-path-resolution-"));
+    mkdirSync(join(dir, "src"));
+    try {
+      const tool = await getSgTool();
 
-    let capturedArgs: string[] = [];
-    vi.mocked(cp.execFile).mockImplementation((_cmd: any, args: any, _opts: any, cb: any) => {
-      capturedArgs = args;
-      cb(null, "[]", "");
-      return {} as any;
-    });
+      let capturedArgs: string[] = [];
+      vi.mocked(cp.execFile).mockImplementation((_cmd: any, args: any, _opts: any, cb: any) => {
+        capturedArgs = args;
+        cb(null, "[]", "");
+        return {} as any;
+      });
 
-    await tool.execute(
-      "tc",
-      { pattern: "p", path: "src" },
-      new AbortController().signal,
-      () => {},
-      { cwd: "/my/project" },
-    );
+      await tool.execute(
+        "tc",
+        { pattern: "p", path: "src" },
+        new AbortController().signal,
+        () => {},
+        { cwd: dir },
+      );
 
-    expect(capturedArgs[capturedArgs.length - 1]).toBe("/my/project/src");
+      expect(capturedArgs[capturedArgs.length - 1]).toBe(join(dir, "src"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
