@@ -80,6 +80,19 @@ This package is a good fit when you want pi to:
 - `symbol` cannot be combined with `offset` or `limit`.
 - `bundle: "local"` requires `symbol` and cannot be combined with `map` or `offset`.
 
+### Persistent structural-map cache
+
+Symbol maps computed by `read({ path, map: true })` and the `read({ path, symbol: ... })` lookup path are cached to disk across agent sessions, so repeated reads of the same file can skip recomputation when the cache key still matches.
+
+- `PI_HASHLINE_MAP_CACHE_DIR` — override the cache directory directly.
+- `XDG_CACHE_HOME` — when `PI_HASHLINE_MAP_CACHE_DIR` is unset, the cache lives under `$XDG_CACHE_HOME/pi-hashline-readmap/maps`.
+- default fallback — `~/.cache/pi-hashline-readmap/maps`
+- `PI_HASHLINE_NO_PERSIST_MAPS=1` — disable the on-disk cache entirely and keep caching in-memory only.
+
+### Fuzzy symbol fallback banners
+
+When `symbol` does not resolve through the normal exact / case-insensitive / prefix path, `read` falls back to fuzzy tiers: camelCase word boundary, then substring. Approximate matches still return content, but the output prepends a confirmation banner naming the matched symbol, the tier that matched, nearby candidates, and the confirmation hint so you can decide whether to trust the guess or tighten the query.
+
 ## `edit`
 - hash-verified anchored edits using `LINE:HASH` anchors from `read`, `grep`, or `ast_search`
 - operations: `set_line`, `replace_lines`, `insert_after`, `replace`
@@ -97,7 +110,13 @@ After each successful edit, `details.ptcValue.semanticSummary` classifies the ch
 
 When [difftastic](https://difftastic.wilfred.me/) (`difft`) is installed, classification uses AST-aware diffing for better formatting-only detection and moved-block summaries. When difftastic is unavailable or fails, the tool falls back silently to internal heuristics.
 
-The success text output stays unchanged. Semantic classification is additive metadata only.
+The base success text stays compact; semantic classification is additive metadata, and moved-block summaries may append a `[semantic: ...]` suffix.
+### Anchor-first edit guidance
+
+`edit` returns a semantic summary alongside the normal diff output. In structured data this lives at `details.ptcValue.semanticSummary`; when moved blocks are detected, the visible text also carries a `[semantic: ...]` suffix so agents can distinguish formatting-only edits from structural changes quickly.
+
+Prefer `set_line`, `replace_lines`, and `insert_after` over broad `replace` whenever possible. Anchor-based operations minimise blast radius, preserve hash verification, and keep semantic summaries precise.
+
 
 ## `grep`
 - hash-anchored matches ready for direct use with `edit`
@@ -105,10 +124,12 @@ The success text output stays unchanged. Semantic classification is additive met
 - `summary: true` mode for per-file match counts
 - result truncation indicators
 - symbol-scoped results via `scope: "symbol"`
+- symbol-local match windowing via `scopeContext` when combined with `scope: "symbol"`
 - custom TUI rendering with match distribution and truncation badges
 
 ### Symbol-scoped grep
 With `scope: "symbol"`, matches are grouped by their enclosing function, method, class, or other mapped symbol when possible. Unsupported files and unmappable cases fall back gracefully to normal grep output.
+Pass `scopeContext: N` to show only ±N lines around each match within the resolved symbol block. Use `scopeContext: 0` for match lines only. For ordinary raw file-line context outside symbol boundaries, use `context` instead.
 
 ## `ast_search`
 - wraps [ast-grep](https://ast-grep.github.io/) for structural code search
@@ -180,6 +201,16 @@ Recursive file discovery optimized for agents. Uses [`fd`](https://github.com/sh
 - `maxDepth` — maximum directory depth
 
 Returns sorted relative paths with forward slashes and structured `ptcValue`. Output bounded by entry count and 50 KB byte budget.
+### Filters and ordering
+
+| Option | Effect |
+|---|---|
+| `regex: true` | Treat `pattern` as a JavaScript regex against the file basename |
+| `modifiedSince` | Keep entries whose mtime is strictly after the given date (`24h`, `7d`, `2024-01-01`, ISO-8601 timestamp) |
+| `minSize` / `maxSize` | Keep files within an inclusive byte range. Numbers are bytes; strings accept `B` / `K` / `KB` / `M` / `MB` / `G` / `GB` |
+| `sortBy` | `"name"` (default) / `"mtime"` / `"size"` |
+| `reverse` | Descending order. Combine with `sortBy` for newest-first or largest-first results |
+
 
 ## Quick Start
 
@@ -340,6 +371,14 @@ grep({ pattern: "addRoute", path: "src", literal: true, scope: "symbol" })
 ```
 
 Use this when the match location alone is not enough and you want the enclosing function or method block.
+To clamp output to the enclosing symbol instead of the whole file, add `scopeContext`:
+
+```text
+grep({ pattern: "addRoute", path: "src", literal: true, scope: "symbol", scopeContext: 3 })
+```
+
+Use `scopeContext: 0` for only the matching lines.
+
 
 ## Structural code search with ast_search
 ```text
@@ -454,6 +493,7 @@ The same executors are also exposed at `globalThis.__hashlineToolExecutors`.
 - `limit`
 - `summary`
 - `scope: "symbol"`
+- `scopeContext` — context lines around each match within the enclosing symbol (requires `scope: "symbol"`)
 
 ## `edit` operations
 - `set_line`
@@ -477,6 +517,11 @@ The same executors are also exposed at `globalThis.__hashlineToolExecutors`.
 - `limit` — max entries
 - `type` — entry type filter (`"file"`, `"dir"`, `"any"`)
 - `maxDepth` — max directory depth
+- `regex` — treat `pattern` as a JavaScript regex against the basename
+- `sortBy` — `"name"` (default), `"mtime"`, or `"size"`
+- `reverse` — reverse the sort order; useful with `sortBy: "mtime"` / `"size"`
+- `modifiedSince` — keep entries modified strictly after a relative or ISO timestamp
+- `minSize` / `maxSize` — inclusive file size bounds; numbers are bytes, strings accept `B` / `K` / `KB` / `M` / `MB` / `G` / `GB`
 
 ## Project Structure
 ```text
@@ -522,13 +567,18 @@ npm run typecheck
 ```
 
 As of the current repository state, the suite passes with:
-- **150** test files
-- **747** tests
+- **216** test files
+- **1064** tests
 
 ### Local development notes
-This repository is intended to be used as a pi extension workspace. In local development, changes can take effect immediately when the extension is installed from the local checkout.
-
+This repository is intended to be used as a pi extension workspace. New agent sessions pick up local extension edits from the checkout, but running sessions do not hot-reload the module graph. Restart the agent session after changing extension code.
 For project-specific development workflow details, see [AGENTS.md](AGENTS.md).
+
+## Troubleshooting
+
+### "I edited the extension but nothing changed."
+
+Restart the agent session. New sessions pick up the latest extension code; running sessions load the module graph once at startup and do not hot-reload.
 
 ## Publishing
 ```bash
@@ -542,6 +592,7 @@ The published package includes:
 - `prompts/`
 - `LICENSE`
 - `README.md`
+- `CHANGELOG.md`
 
 ## When to choose this package
 Install `pi-hashline-readmap` if you want pi to be stronger at:
