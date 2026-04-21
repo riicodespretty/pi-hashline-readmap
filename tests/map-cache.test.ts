@@ -1,8 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { writeFile, unlink, utimes } from "fs/promises";
+import { writeFile, unlink, utimes, stat } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomBytes } from "crypto";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const mod = await importOriginal<typeof import("node:fs/promises")>();
+	const mockedStat = vi.fn();
+	return {
+		...mod,
+		stat: async (path: any, options?: any) => {
+			const result = await mod.stat(path, options);
+			const mocked = mockedStat(path, options);
+			if (mocked) return mocked;
+			return result;
+		},
+		__mockedStat: mockedStat,
+	};
+});
 import { getOrGenerateMap, clearMapCache } from "../src/map-cache.js";
 
 function tmpPath(ext = ".ts"): string {
@@ -94,6 +109,36 @@ describe("map-cache", () => {
 		clearMapCache();
 		await getOrGenerateMap(p);
 		expect(spy.mock.calls.length).toBe(callsAfterFirst + 1); // called again after clear
+
+		spy.mockRestore();
+	});
+
+	it("regenerates map when content changes but mtime stays the same", async () => {
+		const mapperModule = await import("../src/readmap/mapper.js");
+		const spy = vi.spyOn(mapperModule, "generateMap");
+
+		const p = createTempFile("");
+		await writeFile(p, "export function hello(): number { return 1; }\n");
+		const first = await getOrGenerateMap(p);
+		expect(first).not.toBeNull();
+		expect(first!.symbols.some((s) => s.name === "hello")).toBe(true);
+
+		const s = await stat(p);
+		const exactMtimeMs = s.mtimeMs;
+		await writeFile(p, "export function goodbye(): string { return 'bye'; }\n");
+
+		// Simulate coarse mtime: force stat to report the old mtime
+		const fsPromises = await import("node:fs/promises");
+		(fsPromises as any).__mockedStat.mockImplementation(() => {
+			return { mtimeMs: exactMtimeMs, mtime: new Date(exactMtimeMs) };
+		});
+
+		const second = await getOrGenerateMap(p);
+
+		// Should regenerate because content changed even though mtime matches
+		expect(second).not.toBeNull();
+		expect(second!.symbols.some((s) => s.name === "goodbye")).toBe(true);
+		expect(second).not.toBe(first);
 
 		spy.mockRestore();
 	});

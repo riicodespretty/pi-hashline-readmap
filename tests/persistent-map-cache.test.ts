@@ -483,7 +483,8 @@ describe("getOrGenerateMap — opt-out env var", () => {
     expect(result).not.toBeNull();
     expect(readCachedSpy).not.toHaveBeenCalled();
     expect(writeCachedSpy).not.toHaveBeenCalled();
-    expect(contentHashSpy).not.toHaveBeenCalled();
+    // contentHashFor64k is now called for in-memory cache validation even when persistence is off
+    expect(contentHashSpy).toHaveBeenCalled();
 
     await new Promise((r) => setImmediate(r));
     const entries = await readdir(dir);

@@ -10,6 +10,7 @@ import {
 } from "./persistent-map-cache.js";
 interface CacheEntry {
 	mtimeMs: number;
+	contentHash: string;
 	map: FileMap | null;
 }
 export const MAP_CACHE_MAX_SIZE = 500;
@@ -50,13 +51,17 @@ export async function getOrGenerateMap(absPath: string): Promise<FileMap | null>
 		const { mtimeMs } = fileStat;
 		const cached = cache.get(absPath);
 		if (cached && cached.mtimeMs === mtimeMs) {
-			cache.delete(absPath);
-			cache.set(absPath, cached);
-			return cached.map;
+			const currentHash = await contentHashFor64k(absPath);
+			if (currentHash && currentHash === cached.contentHash) {
+				cache.delete(absPath);
+				cache.set(absPath, cached);
+				return cached.map;
+			}
 		}
 		if (!persistenceEnabled()) {
 			const map = await generateMap(absPath);
-			rememberInMemory(absPath, { mtimeMs, map });
+			const hash = await contentHashFor64k(absPath);
+			rememberInMemory(absPath, { mtimeMs, contentHash: hash, map });
 			return map;
 		}
 
@@ -82,8 +87,8 @@ export async function getOrGenerateMap(absPath: string): Promise<FileMap | null>
 					);
 					const fromDisk = await readCached(key);
 					if (fromDisk) {
-						rememberInMemory(absPath, { mtimeMs, map: fromDisk });
-						return fromDisk;
+					rememberInMemory(absPath, { mtimeMs, contentHash: preContentHash, map: fromDisk });
+					return fromDisk;
 					}
 				}
 			}
@@ -103,7 +108,8 @@ export async function getOrGenerateMap(absPath: string): Promise<FileMap | null>
 			}
 		}
 		if (shouldRemember) {
-			rememberInMemory(absPath, { mtimeMs, map });
+			const hash = stableHash ?? preContentHash ?? "";
+			rememberInMemory(absPath, { mtimeMs, contentHash: hash, map });
 		}
 		if (map && stableHash) {
 			try {
