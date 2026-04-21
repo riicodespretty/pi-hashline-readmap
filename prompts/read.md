@@ -1,4 +1,4 @@
-Read a file. For text files, each line is prefixed with `LINE:HASH|` (e.g., `12:abc12|content`). Use these references as anchors for the `edit` tool.
+Read a file. For text files, each line is prefixed with `LINE:HASH|` (e.g., `12:abc|content`). Use these references as anchors for the `edit` tool.
 Images (`jpg`, `png`, `gif`, `webp`) are delegated to the built-in image reader and returned as image attachments.
 
 Default limit: {{DEFAULT_MAX_LINES}} lines or {{DEFAULT_MAX_BYTES}}.
@@ -8,7 +8,7 @@ When a file is truncated (exceeds {{DEFAULT_MAX_LINES}} lines or {{DEFAULT_MAX_B
 Use the appended map for targeted reads with `offset` and `limit` — e.g., `read(path, { offset: LINE, limit: N })`.
 When provided, `offset` and `limit` must be positive integers; `0` and negative values are invalid.
 
-Maps support 17 languages (including TypeScript, Python, Rust, Go, C/C++, Java, and more) and are cached in memory by file modification time for fast repeated access.
+Maps support 18 mapped language/file kinds — including TypeScript, JavaScript, Python, Rust, Go, C, C headers, C++, Swift, Shell, Clojure, SQL, JSON, JSONL, Markdown, YAML, TOML, and CSV/TSV — and use in-memory caching with optional persistent caching across sessions.
 
 ## Map Parameter
 

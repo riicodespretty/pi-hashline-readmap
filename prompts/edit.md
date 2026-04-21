@@ -14,6 +14,7 @@ Surgically edit files with hash-verified line references (anchors). Copy `LINE:H
 
 ### Prefer anchored variants
 `set_line`, `replace_lines`, and `insert_after` use `LINE:HASH` anchors and verify that the file still matches the content you saw earlier.
+`edit` also requires the target file to have been anchored earlier in the current session. If it says the file was not read, run `read`, `grep`, `ast_search`, or `write` first to produce fresh anchors for that file.
 
 ### `replace` is the escape hatch
 `replace` does not use anchors and does not verify exact line positions. Use it only when an anchored edit is not practical, such as a repeated string replacement across many unrelated lines.

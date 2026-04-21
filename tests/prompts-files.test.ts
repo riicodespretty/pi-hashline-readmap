@@ -22,12 +22,13 @@ describe("prompts directory (AC15)", () => {
     const readPrompt = readFileSync(resolve(root, "prompts/read.md"), "utf8");
 
     expect(readPrompt).toContain("LINE:HASH|");
+    expect(readPrompt).toContain("12:abc|content");
     expect(readPrompt).toContain("{{DEFAULT_MAX_LINES}}");
     expect(readPrompt).toContain("{{DEFAULT_MAX_BYTES}}");
     expect(readPrompt).toContain("structural map");
     expect(readPrompt).toContain("read(path, { offset:");
-    expect(readPrompt).toContain("17 languages");
-    expect(readPrompt).toContain("cached in memory by file modification time");
+    expect(readPrompt).toContain("18 mapped language/file kinds");
+    expect(readPrompt).toContain("persistent caching across sessions");
     expect(readPrompt).toContain("Images");
   });
 

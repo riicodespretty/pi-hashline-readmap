@@ -60,6 +60,7 @@ docs/features/
 HANDOFF.md
 TOOL_TESTING_REPORT*.md
 USER_REALISTIC_TESTING_REPORT*.md
+.tmp-verify/
 
 # ── GSD baseline (auto-generated) ──
 .gsd

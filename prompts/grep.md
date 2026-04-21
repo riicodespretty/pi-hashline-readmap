@@ -27,6 +27,10 @@ Groups matches by their enclosing function, method, or class. By default, shows 
 - `scope` — Set to `"symbol"` to group matches by enclosing symbol block
 - `scopeContext` — Number of context lines to show around each match within the enclosing symbol (requires `scope: "symbol"`). `0` = match lines only; `N > 0` = ±N lines clipped at the symbol boundary. Rejected when `scope` is not `"symbol"` — use `context` for non-symbol-scoped searches.
 
+## Truncation behavior
+- If total matches hit `limit`, grep appends `[Results truncated at N matches — refine pattern or increase limit]`.
+- Independently, if the rendered output exceeds the overall line/byte budget, grep head-truncates the text and appends `[Output truncated: ...]`.
+
 ## Usage Guidance
 
 - Use `summary: true` first to scope a broad search, then drill into specific files with `path` or `glob`

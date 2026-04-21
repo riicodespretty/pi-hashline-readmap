@@ -120,7 +120,7 @@ export function parseLineRef(ref: string): { line: number; hash: string; content
 	const cleaned = ref.replace(/\|.*$/, "").replace(/ {2}.*$/, "").trim();
 	const normalized = cleaned.replace(/\s*:\s*/, ":");
 	const match = normalized.match(new RegExp(`^(\\d+):([0-9a-fA-F]{${HASH_LEN}})$`));
-	if (!match) throw new Error(`Invalid line reference "${ref}". Expected "LINE:HASH" (e.g. "5:ab").`);
+	if (!match) throw new Error(`Invalid line reference "${ref}". Expected "LINE:HASH" (e.g. "5:abc").`);
 	const line = Number.parseInt(match[1], 10);
 	if (line < 1) throw new Error(`Line number must be >= 1, got ${line} in "${ref}".`);
 	return { line, hash: match[2], content: contentAfterPipe };

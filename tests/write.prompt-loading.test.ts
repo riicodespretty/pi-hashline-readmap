@@ -26,4 +26,12 @@ describe("prompt loading — write", () => {
     const tool = captureTool(registerWriteTool);
     expect(tool.description).toBe(firstParagraph(promptPath));
   });
+
+  it("documents binary no-anchor behavior, safe display escaping, and best-effort map appends", () => {
+    const promptPath = resolve("prompts/write.md");
+    const content = readFileSync(promptPath, "utf8");
+    expect(content).toContain("no anchors to feed into `edit`");
+    expect(content).toContain("control characters");
+    expect(content).toContain("map append is best-effort");
+  });
 });
