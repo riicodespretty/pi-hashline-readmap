@@ -116,6 +116,54 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
       args.push(searchPath);
 
       try {
+        await fsStat(searchPath);
+      } catch (err: any) {
+        if (err?.code === "ENOENT") {
+          const message = `Error: path '${p.path ?? "."}' does not exist`;
+          return {
+            content: [{ type: "text", text: message }],
+            isError: true,
+            details: {
+              ptcValue: {
+                tool: "ast_search",
+                ok: false,
+                path: p.path ?? searchPath,
+                error: buildPtcError("path-not-found", message),
+              },
+            },
+          };
+        }
+        if (err?.code === "EACCES" || err?.code === "EPERM") {
+          const message = `Error: permission denied for path '${p.path ?? "."}'`;
+          return {
+            content: [{ type: "text", text: message }],
+            isError: true,
+            details: {
+              ptcValue: {
+                tool: "ast_search",
+                ok: false,
+                path: p.path ?? searchPath,
+                error: buildPtcError("permission-denied", message),
+              },
+            },
+          };
+        }
+        const message = `Error: could not access path '${p.path ?? "."}': ${err?.message ?? String(err)}`;
+        return {
+          content: [{ type: "text", text: message }],
+          isError: true,
+          details: {
+            ptcValue: {
+              tool: "ast_search",
+              ok: false,
+              path: p.path ?? searchPath,
+              error: buildPtcError("fs-error", message, undefined, { fsCode: err?.code, fsMessage: err?.message }),
+            },
+          },
+        };
+      }
+
+      try {
         const { stdout } = await execFileText("sg", args, {
           cwd: ctx.cwd,
           signal,

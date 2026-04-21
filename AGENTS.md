@@ -12,7 +12,7 @@ Repo-local guide for working on `pi-hashline-readmap`.
 - `ast_search` — ast-grep wrapper with hashlined output
 - `bash` filtering — command-aware output compression
 
-The extension is symlinked from `~/.pi/agent/extensions/pi-hashline-readmap` to this workspace, so local edits take effect immediately.
+The extension is loaded via an absolute path entry in `~/.pi/agent/settings.json`'s `extensions` array (pointing at this workspace's `index.ts`), so **new agent sessions** pick up local edits automatically. Running sessions do **not** hot-reload the module graph — restart any in-flight agent session to see changes take effect.
 
 ## Version Control
 

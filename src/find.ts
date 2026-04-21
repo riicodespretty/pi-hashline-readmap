@@ -9,6 +9,7 @@ import { resolveToCwd } from "./path-utils.js";
 import * as findStat from "./find-stat.js";
 import { parseRelativeOrIsoDate, parseSize } from "./find-parsers.js";
 import { buildPtcError } from "./ptc-value.js";
+import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 
 const MAX_BYTES = 50 * 1024; // 50 KB
 const DEFAULT_LIMIT = 1000;
@@ -369,6 +370,38 @@ export function registerFindTool(pi: ExtensionAPI) {
       const limit = params.limit ?? DEFAULT_LIMIT;
       const type = params.type ?? "file";
       const pattern = params.pattern;
+      const maxDepthCoerced = coerceObviousBase10Int(params.maxDepth, "maxDepth");
+      if (!maxDepthCoerced.ok) {
+        const message = `Error: ${maxDepthCoerced.message}`;
+        return {
+          content: [{ type: "text" as const, text: message }],
+          isError: true,
+          details: {
+            ptcValue: {
+              tool: "find" as const,
+              ok: false,
+              path: params.path ?? searchPath,
+              error: buildPtcError("invalid-params-combo", maxDepthCoerced.message),
+            },
+          },
+        };
+      }
+      if (maxDepthCoerced.value !== undefined && maxDepthCoerced.value < 0) {
+        const message = `Invalid maxDepth: expected a non-negative integer, received ${maxDepthCoerced.value}.`;
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+          details: {
+            ptcValue: {
+              tool: "find" as const,
+              ok: false,
+              path: params.path ?? searchPath,
+              error: buildPtcError("invalid-params-combo", message),
+            },
+          },
+        };
+      }
+      params = { ...params, maxDepth: maxDepthCoerced.value };
 
       // Check if path exists
       try {

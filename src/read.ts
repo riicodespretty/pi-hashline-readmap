@@ -147,6 +147,25 @@ export function registerReadTool(pi: ExtensionAPI, options: ReadToolOptions = {}
 				offset: offset.value,
 				limit: limit.value,
 			};
+			if (rawParams.symbol !== undefined) {
+				const trimmedSymbol = typeof rawParams.symbol === "string" ? rawParams.symbol.trim() : "";
+				if (trimmedSymbol.length === 0) {
+					const message = "Invalid symbol: expected a non-empty string.";
+					return {
+						content: [{ type: "text", text: message }],
+						isError: true,
+						details: {
+							ptcValue: {
+								tool: "read",
+								ok: false,
+								path: rawParams.path,
+								error: buildPtcError("invalid-params-combo", message),
+							},
+						},
+					};
+				}
+				p.symbol = trimmedSymbol;
+			}
 			const rawPath = p.path.replace(/^@/, "");
 			const absolutePath = resolveToCwd(rawPath, ctx.cwd);
 			const succeed = <T extends AgentToolResult<any>>(result: T): T => {

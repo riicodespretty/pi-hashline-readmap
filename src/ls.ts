@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { resolveToCwd } from "./path-utils.js";
 import { buildPtcError } from "./ptc-value.js";
+import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 
 const MAX_BYTES = 50 * 1024; // 50 KB
 const DEFAULT_LIMIT = 500;
@@ -66,6 +67,30 @@ function formatOutput(entries: LsEntry[], totalCount: number, truncated: boolean
   return text;
 }
 
+function validateGlobBalance(glob: string): string | null {
+  let brackets = 0;
+  let braces = 0;
+  for (let i = 0; i < glob.length; i++) {
+    const ch = glob[i];
+    if (ch === "\\") {
+      i++;
+      continue;
+    }
+    if (ch === "[") brackets++;
+    else if (ch === "]") {
+      if (brackets === 0) return "Unmatched ']'.";
+      brackets--;
+    } else if (ch === "{") braces++;
+    else if (ch === "}") {
+      if (braces === 0) return "Unmatched '}'.";
+      braces--;
+    }
+  }
+  if (brackets !== 0) return "Unterminated character class.";
+  if (braces !== 0) return "Unterminated brace expansion.";
+  return null;
+}
+
 export function registerLsTool(pi: ExtensionAPI) {
   const tool: Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof LS_PTC } = {
     name: "ls",
@@ -74,20 +99,54 @@ export function registerLsTool(pi: ExtensionAPI) {
     ptc: LS_PTC,
     parameters: Type.Object({
       path: Type.Optional(Type.String({ description: "Directory to list (default: cwd)" })),
-      limit: Type.Optional(Type.Number({ description: "Max entries to return (default: 500)" })),
+      limit: Type.Optional(
+        Type.Union(
+          [Type.Number(), Type.String()],
+          { description: "Max entries to return (default: 500)" },
+        ),
+      ),
       glob: Type.Optional(Type.String({ description: "Filter entries by glob pattern (e.g. '*.ts')" })),
     }),
-
     async execute(
       _toolCallId: string,
-      params: { path?: string; limit?: number; glob?: string },
+      params: { path?: string; limit?: number | string; glob?: string },
       _signal: AbortSignal | undefined,
       _onUpdate: any,
       ctx: any,
     ) {
       const cwd: string = ctx?.cwd ?? process.cwd();
       const targetPath = params.path ? resolveToCwd(params.path, cwd) : cwd;
-      const limit = params.limit ?? DEFAULT_LIMIT;
+      const limitCoerced = coerceObviousBase10Int(params.limit, "limit");
+      if (!limitCoerced.ok) {
+        return {
+          content: [{ type: "text" as const, text: limitCoerced.message }],
+          isError: true,
+          details: {
+            ptcValue: {
+              tool: "ls" as const,
+              ok: false,
+              path: params.path ?? targetPath,
+              error: buildPtcError("invalid-limit", limitCoerced.message),
+            },
+          },
+        };
+      }
+      if (limitCoerced.value !== undefined && limitCoerced.value < 1) {
+        const message = `Invalid limit: expected a positive integer, received ${limitCoerced.value}.`;
+        return {
+          content: [{ type: "text" as const, text: message }],
+          isError: true,
+          details: {
+            ptcValue: {
+              tool: "ls" as const,
+              ok: false,
+              path: params.path ?? targetPath,
+              error: buildPtcError("invalid-limit", message),
+            },
+          },
+        };
+      }
+      const limit = limitCoerced.value ?? DEFAULT_LIMIT;
 
       // Check if path exists and is a directory
       let pathStat;
@@ -151,6 +210,22 @@ export function registerLsTool(pi: ExtensionAPI) {
 
       // Apply glob filter
       if (params.glob) {
+        const balanceError = validateGlobBalance(params.glob);
+        if (balanceError) {
+          const message = `Invalid glob ${JSON.stringify(params.glob)}: ${balanceError}`;
+          return {
+            content: [{ type: "text" as const, text: message }],
+            isError: true,
+            details: {
+              ptcValue: {
+                tool: "ls" as const,
+                ok: false,
+                path: params.path ?? targetPath,
+                error: buildPtcError("invalid-params-combo", message),
+              },
+            },
+          };
+        }
         const picomatch = (await import("picomatch" as any)).default;
         const isMatch = picomatch(params.glob);
         allEntries = allEntries.filter((e) => isMatch(e.name));

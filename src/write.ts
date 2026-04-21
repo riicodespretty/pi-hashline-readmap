@@ -31,6 +31,58 @@ export interface WriteToolOptions {
   onFileAnchored?: (absolutePath: string) => void;
 }
 
+type MappedFsError = {
+  code: "permission-denied" | "path-is-directory" | "fs-error";
+  message: string;
+  includeMeta: boolean;
+};
+
+function mapFsWriteError(err: any, path: string): MappedFsError {
+  const phase: "mkdir" | "write" | undefined = err?.__phase;
+  const fsCode = err?.code as string | undefined;
+
+  if (fsCode === "EACCES" || fsCode === "EPERM") {
+    return {
+      code: "permission-denied",
+      message: `Permission denied — cannot write: ${path}`,
+      includeMeta: false,
+    };
+  }
+  if (fsCode === "EISDIR") {
+    return {
+      code: "path-is-directory",
+      message: `Path is a directory — cannot overwrite: ${path}`,
+      includeMeta: false,
+    };
+  }
+  if (fsCode === "ENOENT" && phase === "mkdir") {
+    return {
+      code: "fs-error",
+      message: `Cannot create parent directories for ${path}: ${err?.message ?? String(err)}`,
+      includeMeta: true,
+    };
+  }
+  if (fsCode === "ENOSPC") {
+    return {
+      code: "fs-error",
+      message: `No space left on device — cannot write: ${path}`,
+      includeMeta: true,
+    };
+  }
+  if (fsCode === "EROFS") {
+    return {
+      code: "fs-error",
+      message: `Read-only filesystem — cannot write: ${path}`,
+      includeMeta: true,
+    };
+  }
+  return {
+    code: "fs-error",
+    message: `Error writing ${path}: ${err?.message ?? String(err)}`,
+    includeMeta: true,
+  };
+}
+
 export async function executeWrite(opts: {
   path: string;
   content: string;
@@ -42,10 +94,19 @@ export async function executeWrite(opts: {
   const { path: filePath, content, map: requestMap, cwd } = opts;
 
   // Create parent directories
-  mkdirSync(dirname(filePath), { recursive: true });
-
+  try {
+    mkdirSync(dirname(filePath), { recursive: true });
+  } catch (err: any) {
+    err.__phase = "mkdir";
+    throw err;
+  }
   // Write file
-  writeFileSync(filePath, content, "utf-8");
+  try {
+    writeFileSync(filePath, content, "utf-8");
+  } catch (err: any) {
+    err.__phase = "write";
+    throw err;
+  }
 
   const warnings: string[] = [];
   const ptcWarnings: PtcWarning[] = [];
@@ -134,12 +195,37 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
     async execute(_toolCallId: string, params: { path: string; content: string; map?: boolean }, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
       const cwd = ctx?.cwd ?? process.cwd();
       const absolutePath = resolveToCwd(params.path, cwd);
-      const result = await executeWrite({
-        path: absolutePath,
-        content: params.content,
-        map: params.map,
-        cwd,
-      });
+      let result: WriteResult;
+      try {
+        result = await executeWrite({
+          path: absolutePath,
+          content: params.content,
+          map: params.map,
+          cwd,
+        });
+      } catch (err: any) {
+        const mapped = mapFsWriteError(err, absolutePath);
+        return {
+          content: [{ type: "text" as const, text: mapped.message }],
+          isError: true,
+          details: {
+            ptcValue: {
+              tool: "write" as const,
+              path: absolutePath,
+              lines: [] as PtcLine[],
+              warnings: [] as PtcWarning[],
+              ok: false,
+              error: buildPtcError(
+                mapped.code,
+                mapped.message,
+                undefined,
+                mapped.includeMeta ? { fsCode: err?.code, fsMessage: err?.message } : undefined,
+              ),
+            },
+            warnings: [] as string[],
+          },
+        };
+      }
 
       if (result.ptcValue.lines.length > 0) {
         options.onFileAnchored?.(absolutePath);
