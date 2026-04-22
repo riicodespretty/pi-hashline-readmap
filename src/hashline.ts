@@ -309,11 +309,12 @@ function restoreOldWrappedLines(oldLines: string[], newLines: string[]): string[
 		if (bucket) bucket.count++;
 		else canonToOld.set(canon, { line, count: 1 });
 	}
-
 	const candidates: { start: number; len: number; replacement: string; canon: string }[] = [];
 	for (let start = 0; start < newLines.length; start++) {
 		for (let len = 2; len <= 10 && start + len <= newLines.length; len++) {
-			const canonSpan = stripAllWhitespace(newLines.slice(start, start + len).join(""));
+			const span = newLines.slice(start, start + len);
+			if (span.some((line) => line.trim().length === 0)) continue;
+			const canonSpan = stripAllWhitespace(span.join(""));
 			const old = canonToOld.get(canonSpan);
 			if (old && old.count === 1 && canonSpan.length >= 6) {
 				candidates.push({ start, len, replacement: old.line, canon: canonSpan });
@@ -321,16 +322,12 @@ function restoreOldWrappedLines(oldLines: string[], newLines: string[]): string[
 		}
 	}
 	if (candidates.length === 0) return newLines;
-
-	// Keep only spans whose canonical match is unique in the new output.
 	const canonCounts = new Map<string, number>();
 	for (const c of candidates) {
 		canonCounts.set(c.canon, (canonCounts.get(c.canon) ?? 0) + 1);
 	}
 	const uniqueCandidates = candidates.filter((c) => (canonCounts.get(c.canon) ?? 0) === 1);
 	if (uniqueCandidates.length === 0) return newLines;
-
-	// Apply replacements back-to-front so indices remain stable.
 	uniqueCandidates.sort((a, b) => b.start - a.start);
 	const out = [...newLines];
 	for (const c of uniqueCandidates) {
