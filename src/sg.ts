@@ -9,9 +9,12 @@ import { normalizeToLF, stripBom } from "./edit-diff.js";
 import { ensureHashInit } from "./hashline.js";
 import { buildPtcError, buildPtcLine } from "./ptc-value.js";
 import { resolveToCwd } from "./path-utils.js";
+import type { FileSymbol } from "./readmap/types.js";
 import { buildSgOutput } from "./sg-output.js";
+import { isContextHygieneDebugEnabled } from "./context-hygiene.js";
 
 type SgParams = { pattern: string; lang?: string; path?: string };
+const CONTEXT_HYGIENE_SG_SYMBOL_FILE_CAP = 20;
 
 type SgMatch = {
   file: string;
@@ -21,6 +24,11 @@ type SgMatch = {
 export interface SgRange {
   startLine: number;
   endLine: number;
+}
+
+export interface SgEnclosingSymbol {
+  name: string;
+  kind: string;
 }
 
 export function mergeRanges(ranges: SgRange[]): SgRange[] {
@@ -42,6 +50,39 @@ export function mergeRanges(ranges: SgRange[]): SgRange[] {
   }
 
   return merged;
+}
+
+function collectFileSymbols(symbols: FileSymbol[]): FileSymbol[] {
+  return symbols.flatMap((symbol) => [symbol, ...collectFileSymbols(symbol.children ?? [])]);
+}
+
+export async function findEnclosingSgSymbols(absPath: string, ranges: SgRange[]): Promise<SgEnclosingSymbol[]> {
+  let fileMap: Awaited<ReturnType<typeof import("./map-cache.js").getOrGenerateMap>>;
+  try {
+    const { getOrGenerateMap } = await import("./map-cache.js");
+    fileMap = await getOrGenerateMap(absPath);
+  } catch {
+    return [];
+  }
+  if (!fileMap) return [];
+
+  const allSymbols = collectFileSymbols(fileMap.symbols);
+  const found: SgEnclosingSymbol[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const range of ranges) {
+    const enclosing = allSymbols
+      .filter((symbol) => symbol.startLine <= range.startLine && symbol.endLine >= range.endLine)
+      .sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine) || a.startLine - b.startLine)[0];
+    if (!enclosing) continue;
+
+    const key = `${enclosing.kind}:${enclosing.name}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    found.push({ name: enclosing.name, kind: enclosing.kind });
+  }
+
+  return found;
 }
 
 const SG_PROMPT = readFileSync(new URL("../prompts/sg.md", import.meta.url), "utf-8").trim();
@@ -177,6 +218,7 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
             content: [{ type: "text", text: emptyOutput.text }],
             details: {
               ptcValue: emptyOutput.ptcValue,
+              contextHygiene: emptyOutput.contextHygiene,
             },
           };
         }
@@ -217,7 +259,9 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
           path: string;
           ranges: SgRange[];
           lines: ReturnType<typeof buildPtcLine>[];
+          symbols?: SgEnclosingSymbol[];
         }> = [];
+        const enrichContextHygieneSymbols = isContextHygieneDebugEnabled() && grouped.size <= CONTEXT_HYGIENE_SG_SYMBOL_FILE_CAP;
         for (const [display, { abs, matches: fileMatches }] of grouped) {
           const lines = await getFileLines(abs);
           if (!lines) continue;
@@ -232,6 +276,7 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
             path: abs,
             ranges: mergedRanges.map((range) => ({ ...range })),
             lines: [] as ReturnType<typeof buildPtcLine>[],
+            symbols: [] as SgEnclosingSymbol[],
           };
           for (const range of mergedRanges) {
             for (let ln = range.startLine; ln <= range.endLine; ln++) {
@@ -241,6 +286,7 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
               ptcFile.lines.push(built);
             }
           }
+          ptcFile.symbols = enrichContextHygieneSymbols ? await findEnclosingSgSymbols(abs, ranges) : [];
           ptcFiles.push(ptcFile);
         }
 
@@ -250,6 +296,7 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
             content: [{ type: "text", text: emptyOutput.text }],
             details: {
               ptcValue: emptyOutput.ptcValue,
+              contextHygiene: emptyOutput.contextHygiene,
             },
           };
         }
@@ -267,6 +314,7 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
           content: [{ type: "text", text: builtOutput.text }],
           details: {
             ptcValue: builtOutput.ptcValue,
+            contextHygiene: builtOutput.contextHygiene,
           },
         };
       } catch (err: any) {

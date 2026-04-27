@@ -1,10 +1,18 @@
 import type { PtcLine, PtcRange } from "./ptc-value.js";
+import {
+  buildContextHygieneMetadata,
+  buildFileResource,
+  buildSymbolResource,
+  type ContextHygieneMetadata,
+  type ContextHygieneResource,
+} from "./context-hygiene.js";
 
 export interface SgOutputFile {
   displayPath: string;
   path: string;
   ranges: PtcRange[];
   lines: PtcLine[];
+  symbols?: Array<{ name: string; kind?: string }>;
 }
 
 export interface BuildSgOutputInput {
@@ -22,6 +30,7 @@ export interface SgOutputResult {
       lines: PtcLine[];
     }>;
   };
+  contextHygiene: ContextHygieneMetadata;
 }
 
 export function buildSgOutput(input: BuildSgOutputInput): SgOutputResult {
@@ -32,6 +41,11 @@ export function buildSgOutput(input: BuildSgOutputInput): SgOutputResult {
         tool: "ast_search",
         files: [],
       },
+      contextHygiene: buildContextHygieneMetadata({
+        tool: "ast_search",
+        classification: "search-context",
+        resources: [],
+      }),
     };
   }
 
@@ -40,6 +54,14 @@ export function buildSgOutput(input: BuildSgOutputInput): SgOutputResult {
     blocks.push(`--- ${file.displayPath} ---`);
     for (const line of file.lines) {
       blocks.push(`>>${line.anchor}|${line.display}`);
+    }
+  }
+
+  const contextHygieneResources: ContextHygieneResource[] = [];
+  for (const file of input.files) {
+    contextHygieneResources.push(buildFileResource(file.path));
+    for (const symbol of file.symbols ?? []) {
+      contextHygieneResources.push(buildSymbolResource(file.path, symbol.name, symbol.kind));
     }
   }
 
@@ -53,5 +75,10 @@ export function buildSgOutput(input: BuildSgOutputInput): SgOutputResult {
         lines: file.lines.map((line) => ({ ...line })),
       })),
     },
+    contextHygiene: buildContextHygieneMetadata({
+      tool: "ast_search",
+      classification: "search-context",
+      resources: contextHygieneResources,
+    }),
   };
 }

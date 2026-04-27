@@ -10,6 +10,14 @@ import { registerFindTool } from "./src/find.js";
 import { filterBashOutput } from "./src/rtk/bash-filter.js";
 import { stripAnsi } from "./src/rtk/ansi.js";
 import {
+  buildCommandResource,
+  buildContextHygieneMetadata,
+  getContextHygieneTracker,
+  registerContextHygieneDebugTool,
+  resetContextHygieneTracker,
+  type ContextHygieneMetadata,
+} from "./src/context-hygiene.js";
+import {
   consumeDoomLoopWarning,
   createDoomLoopState,
   formatDoomLoopMessage,
@@ -19,12 +27,48 @@ import {
 function isBashToolResult(event: unknown): event is {
   toolName: string;
   toolCallId: string;
-  input: { command?: string };
+  input?: unknown;
   content: Array<{ type: string; text?: string }>;
   isError?: boolean;
   details?: unknown;
 } {
   return !!event && typeof event === "object" && (event as { toolName?: unknown }).toolName === "bash";
+}
+
+function isContextHygieneResource(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const resource = value as { kind?: unknown; key?: unknown };
+  return (
+    (resource.kind === "file" || resource.kind === "symbol" || resource.kind === "command") &&
+    typeof resource.key === "string"
+  );
+}
+
+function isContextHygieneMetadata(value: unknown): value is ContextHygieneMetadata {
+  if (!value || typeof value !== "object") return false;
+  const metadata = value as Partial<ContextHygieneMetadata>;
+  return (
+    metadata.schemaVersion === 1 &&
+    typeof metadata.tool === "string" &&
+    (metadata.classification === "read-context" ||
+      metadata.classification === "search-context" ||
+      metadata.classification === "command-output" ||
+      metadata.classification === "mutation") &&
+    Array.isArray(metadata.resources) &&
+    metadata.resources.every(isContextHygieneResource)
+  );
+}
+
+function contextHygieneFromDetails(details: unknown): ContextHygieneMetadata | undefined {
+  if (!details || typeof details !== "object") return undefined;
+  const metadata = (details as { contextHygiene?: unknown }).contextHygiene;
+  return isContextHygieneMetadata(metadata) ? metadata : undefined;
+}
+
+function recordContextHygiene(metadata: ContextHygieneMetadata, toolCallId: unknown): void {
+  getContextHygieneTracker().record(metadata, {
+    resultId: typeof toolCallId === "string" ? toolCallId : undefined,
+  });
 }
 
 export {
@@ -69,6 +113,7 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   const readTurns = new Map<string, number>();
   let currentTurn = 0;
   const doomLoopState = createDoomLoopState();
+  resetContextHygieneTracker();
   const noteRead = (absolutePath: string) => {
     currentTurn += 1;
     readTurns.set(absolutePath, currentTurn);
@@ -88,6 +133,7 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   const writeTool = registerWriteTool(pi, { onFileAnchored: noteRead });
   const lsTool = registerLsTool(pi);
   const findTool = registerFindTool(pi);
+  const contextHygieneDebugTool = registerContextHygieneDebugTool(pi);
   const toolExecutors = {
     read: readTool,
     edit: editTool,
@@ -97,6 +143,7 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
     ls: lsTool,
     find: findTool,
     ...(nuTool ? { nu: nuTool } : {}),
+    ...(contextHygieneDebugTool ? { context_hygiene_report: contextHygieneDebugTool } : {}),
   };
 
   (globalThis as any).__hashlineToolExecutors = toolExecutors;
@@ -115,6 +162,8 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   pi.on("tool_result", (event: any) => {
     const doomLoop = consumeDoomLoopWarning(doomLoopState, event.toolCallId);
     if (!isBashToolResult(event)) {
+      const contextHygiene = contextHygieneFromDetails(event.details);
+      if (contextHygiene) recordContextHygiene(contextHygiene, event.toolCallId);
       if (!doomLoop || !Array.isArray(event.content)) {
         return undefined;
       }
@@ -147,7 +196,16 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
           .join("\n")
       : "";
 
-    const command = (event.input as { command?: string }).command ?? "";
+    const command =
+      event.input && typeof event.input === "object" && typeof (event.input as { command?: unknown }).command === "string"
+        ? (event.input as { command: string }).command
+        : "";
+    const contextHygiene = buildContextHygieneMetadata({
+      tool: "bash",
+      classification: "command-output",
+      resources: command ? [buildCommandResource(command)] : [],
+    });
+    recordContextHygiene(contextHygiene, event.toolCallId);
     const applyWarning = (body: string): string => {
       if (!doomLoop) return body;
       const prefix = `${formatDoomLoopMessage(doomLoop)}\n\n---\n`;
@@ -157,7 +215,9 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
       const stripped = stripAnsi(originalText);
       const text = applyWarning(stripped);
       if (text === originalText) return undefined;
-      return { content: [{ type: "text" as const, text }] };
+      const existingDetails =
+        event.details && typeof event.details === "object" ? (event.details as Record<string, unknown>) : {};
+      return { content: [{ type: "text" as const, text }], details: { ...existingDetails, contextHygiene } };
     }
     const { output, savedChars, info } = filterBashOutput(command, originalText);
     if (process.env.PI_RTK_SAVINGS === "1") {
@@ -169,7 +229,7 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
       event.details && typeof event.details === "object" ? (event.details as Record<string, unknown>) : {};
     return {
       content: [{ type: "text" as const, text: applyWarning(body) }],
-      details: { ...existingDetails, compressionInfo: info }
+      details: { ...existingDetails, compressionInfo: info, contextHygiene },
     };
   });
 }

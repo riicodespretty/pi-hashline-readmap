@@ -9,6 +9,7 @@ import { buildPtcError, buildPtcLine, buildPtcWarning, type PtcLine, type PtcWar
 import { looksLikeBinary } from "./binary-detect.js";
 import { getOrGenerateMap } from "./map-cache.js";
 import { formatFileMapWithBudget } from "./readmap/formatter.js";
+import { buildContextHygieneMetadata, buildFileResource, type ContextHygieneMetadata } from "./context-hygiene.js";
 
 const MAX_LINES = 2000;
 const MAX_BYTES = 50 * 1024;
@@ -25,6 +26,7 @@ export interface WriteResult {
     warnings: PtcWarning[];
     map?: { appended: boolean };
   };
+  contextHygiene: ContextHygieneMetadata;
 }
 
 export interface WriteToolOptions {
@@ -110,6 +112,11 @@ export async function executeWrite(opts: {
 
   const warnings: string[] = [];
   const ptcWarnings: PtcWarning[] = [];
+  const contextHygiene = buildContextHygieneMetadata({
+    tool: "write",
+    classification: "mutation",
+    resources: [buildFileResource(filePath)],
+  });
 
   // Binary detection
   if (looksLikeBinary(Buffer.from(content, "utf-8"))) {
@@ -124,6 +131,7 @@ export async function executeWrite(opts: {
         lines: [],
         warnings: ptcWarnings,
       },
+      contextHygiene,
     };
   }
 
@@ -179,6 +187,7 @@ export async function executeWrite(opts: {
       warnings: ptcWarnings,
       ...(requestMap !== undefined ? { map: { appended: mapAppended } } : {}),
     },
+    contextHygiene,
   };
 }
 
@@ -192,7 +201,7 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       content: Type.String({ description: "Content to write to the file" }),
       map: Type.Optional(Type.Boolean({ description: "Append structural map to output" })),
     }),
-    async execute(_toolCallId: string, params: { path: string; content: string; map?: boolean }, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
+    async execute(_toolCallId: string, params: { path: string; content: string; map?: boolean }, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any): Promise<any> {
       const cwd = ctx?.cwd ?? process.cwd();
       const absolutePath = resolveToCwd(params.path, cwd);
       let result: WriteResult;
@@ -247,6 +256,7 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
               error: buildPtcError("binary-content", binaryWarning.message),
             },
             warnings: result.warnings,
+            contextHygiene: result.contextHygiene,
           },
         };
       }
@@ -256,6 +266,7 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
         details: {
           ptcValue: result.ptcValue,
           warnings: result.warnings,
+          contextHygiene: result.contextHygiene,
         },
       };
     },

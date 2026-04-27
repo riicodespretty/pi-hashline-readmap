@@ -499,6 +499,7 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 					diff: diffResult.diff,
 					firstChangedLine: anchorResult.firstChangedLine ?? diffResult.firstChangedLine,
 					ptcValue: builtOutput.ptcValue,
+					contextHygiene: builtOutput.contextHygiene,
 				} as EditToolDetails & {
 					ptcValue: {
 						tool: string;

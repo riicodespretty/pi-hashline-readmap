@@ -5,6 +5,13 @@ import {
   formatSize,
   truncateHead,
 } from "@mariozechner/pi-coding-agent";
+import {
+  buildContextHygieneMetadata,
+  buildFileResource,
+  buildSymbolResource,
+  type ContextHygieneMetadata,
+  type ContextHygieneResource,
+} from "./context-hygiene.js";
 
 export interface GrepOutputRecord extends PtcLine {
   path: string;
@@ -79,6 +86,7 @@ export interface GrepOutputResult {
       warnings: GrepScopeWarning[];
     };
   };
+  contextHygiene: ContextHygieneMetadata;
 }
 
 function renderEntry(displayPath: string, entry: GrepOutputEntry): string {
@@ -163,8 +171,24 @@ export function buildGrepOutput(input: BuildGrepOutputInput): GrepOutputResult {
   if (!input.summary && input.scopeMode === "symbol") {
     ptcValue.scopes = buildScopeMetadata(input.groups, input.scopeWarnings ?? []);
   }
+
+  const contextHygieneResources: ContextHygieneResource[] = [];
+  for (const record of input.records) {
+    contextHygieneResources.push(buildFileResource(record.path));
+  }
+  for (const group of input.groups) {
+    if (!group.scope) continue;
+    contextHygieneResources.push(buildFileResource(group.absolutePath));
+    contextHygieneResources.push(buildSymbolResource(group.absolutePath, group.scope.symbol.name, group.scope.symbol.kind));
+  }
+  const contextHygiene = buildContextHygieneMetadata({
+    tool: "grep",
+    classification: "search-context",
+    resources: contextHygieneResources,
+  });
   return {
     text,
     ptcValue,
+    contextHygiene,
   };
 }

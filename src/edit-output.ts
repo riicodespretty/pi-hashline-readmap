@@ -1,5 +1,6 @@
 import { countEditTypes, parseDiffStats } from "./edit-render-helpers.js";
 import { buildPtcEditResult, type SemanticSummary } from "./ptc-value.js";
+import { buildContextHygieneMetadata, buildFileResource, type ContextHygieneMetadata } from "./context-hygiene.js";
 export interface BuildEditOutputInput {
   path: string;
   displayPath: string;
@@ -13,6 +14,7 @@ export interface BuildEditOutputInput {
 export interface EditOutputResult {
   text: string;
   ptcValue: ReturnType<typeof buildPtcEditResult>;
+  contextHygiene: ContextHygieneMetadata;
 }
 function getVisibleDiffStats(diff: string): { added: number; removed: number } {
   const stats = parseDiffStats(diff);
@@ -79,6 +81,11 @@ export function buildEditOutput(input: BuildEditOutputInput): EditOutputResult {
       warnings: input.warnings,
       noopEdits: input.noopEdits,
       ...(input.semanticSummary ? { semanticSummary: input.semanticSummary } : {}),
+    }),
+    contextHygiene: buildContextHygieneMetadata({
+      tool: "edit",
+      classification: "mutation",
+      resources: [buildFileResource(input.path)],
     }),
   };
 }

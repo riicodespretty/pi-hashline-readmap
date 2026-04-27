@@ -682,6 +682,7 @@ if (p.scope === "symbol" && !summary) {
 				details: {
 					...compactDetails,
 					ptcValue: builtOutput.ptcValue,
+					contextHygiene: builtOutput.contextHygiene,
 				},
 			};
 		},

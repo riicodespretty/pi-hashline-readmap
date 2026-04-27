@@ -580,6 +580,7 @@ return succeed({
 	details: {
 		truncation: truncation.truncated ? truncation : undefined,
 		ptcValue: readOutput.ptcValue,
+		contextHygiene: readOutput.contextHygiene,
 	},
 });
 		},

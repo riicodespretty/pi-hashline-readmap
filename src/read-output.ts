@@ -5,6 +5,13 @@ import {
   truncateHead,
 } from "@mariozechner/pi-coding-agent";
 import { buildPtcLines, renderPtcLines, type PtcLine, type PtcWarning } from "./ptc-value.js";
+import {
+  buildContextHygieneMetadata,
+  buildFileResource,
+  buildSymbolResource,
+  type ContextHygieneMetadata,
+  type ContextHygieneResource,
+} from "./context-hygiene.js";
 
 export interface ReadSymbolMetadata {
   query: string;
@@ -91,6 +98,7 @@ export interface ReadOutputResult {
       warnings: PtcWarning[];
     };
   };
+  contextHygiene: ContextHygieneMetadata;
 }
 
 export function buildReadOutput(input: ReadOutputInput): ReadOutputResult {
@@ -175,9 +183,25 @@ export function buildReadOutput(input: ReadOutputInput): ReadOutputResult {
     };
   }
 
+  const contextHygieneResources: ContextHygieneResource[] = [buildFileResource(input.path)];
+  if (input.symbol) {
+    contextHygieneResources.push(buildSymbolResource(input.path, input.symbol.name, input.symbol.kind));
+  }
+  if (input.bundle?.applied) {
+    for (const support of input.bundle.localSupport) {
+      contextHygieneResources.push(buildSymbolResource(input.path, support.symbol.name, support.symbol.kind));
+    }
+  }
+  const contextHygiene = buildContextHygieneMetadata({
+    tool: "read",
+    classification: "read-context",
+    resources: contextHygieneResources,
+  });
+
   return {
     text,
     lines,
     ptcValue,
+    contextHygiene,
   };
 }
