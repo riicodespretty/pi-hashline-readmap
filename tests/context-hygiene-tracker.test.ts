@@ -3,6 +3,7 @@ import {
   buildCommandResource,
   buildContextHygieneMetadata,
   buildFileResource,
+  buildReadRehydrateDescriptor,
   createContextHygieneTracker,
   getContextHygieneTracker,
   resetContextHygieneTracker,
@@ -12,6 +13,7 @@ describe("context hygiene telemetry tracker", () => {
   it("reports reuse, reruns, mutation staleness, retirement candidates, and churn deterministically", () => {
     const fileResource = buildFileResource("src/read.ts");
     const commandResource = buildCommandResource("npm test");
+    const readRehydrate = buildReadRehydrateDescriptor({ path: "src/read.ts", symbol: "buildReadOutput" });
     const tracker = createContextHygieneTracker();
 
     tracker.record(
@@ -19,6 +21,7 @@ describe("context hygiene telemetry tracker", () => {
         tool: "read",
         classification: "read-context",
         resources: [fileResource],
+        rehydrate: readRehydrate,
       }),
       { resultId: "read-1" },
     );
@@ -87,6 +90,29 @@ describe("context hygiene telemetry tracker", () => {
           staleEventIds: [1, 2],
           mutationEventId: 3,
           reason: "mutation-after-read",
+          staleResults: [
+            {
+              status: "stale",
+              originalTool: "read",
+              originalEventId: 1,
+              originalResultId: "read-1",
+              staleResourceKeys: ["file:src/read.ts"],
+              invalidatingMutationEventId: 3,
+              invalidatingMutationResultId: "edit-1",
+              reason: "mutation-after-read",
+              rehydrate: readRehydrate,
+            },
+            {
+              status: "stale",
+              originalTool: "read",
+              originalEventId: 2,
+              originalResultId: "read-2",
+              staleResourceKeys: ["file:src/read.ts"],
+              invalidatingMutationEventId: 3,
+              invalidatingMutationResultId: "edit-1",
+              reason: "mutation-after-read",
+            },
+          ],
         },
       ],
       retirementCandidates: [

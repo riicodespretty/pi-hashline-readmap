@@ -11,7 +11,7 @@ import { buildPtcError, buildPtcLine } from "./ptc-value.js";
 import { resolveToCwd } from "./path-utils.js";
 import type { FileSymbol } from "./readmap/types.js";
 import { buildSgOutput } from "./sg-output.js";
-import { isContextHygieneDebugEnabled } from "./context-hygiene.js";
+import { buildAstSearchRehydrateDescriptor, isContextHygieneDebugEnabled } from "./context-hygiene.js";
 
 type SgParams = { pattern: string; lang?: string; path?: string };
 const CONTEXT_HYGIENE_SG_SYMBOL_FILE_CAP = 20;
@@ -150,6 +150,11 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       await ensureHashInit();
       const p = params as SgParams;
+      const rehydrate = buildAstSearchRehydrateDescriptor({
+        pattern: p.pattern,
+        lang: p.lang,
+        path: p.path,
+      });
       const args = ["run", "--json", "-p", p.pattern];
       if (p.lang) args.push("-l", p.lang);
 
@@ -213,7 +218,7 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
 
         const matches = JSON.parse(stdout);
         if (!Array.isArray(matches) || matches.length === 0) {
-          const emptyOutput = buildSgOutput({ pattern: p.pattern, files: [] });
+          const emptyOutput = buildSgOutput({ pattern: p.pattern, files: [], rehydrate });
           return {
             content: [{ type: "text", text: emptyOutput.text }],
             details: {
@@ -291,7 +296,7 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
         }
 
         if (blocks.length === 0) {
-          const emptyOutput = buildSgOutput({ pattern: p.pattern, files: [] });
+          const emptyOutput = buildSgOutput({ pattern: p.pattern, files: [], rehydrate });
           return {
             content: [{ type: "text", text: emptyOutput.text }],
             details: {
@@ -304,6 +309,7 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
         const builtOutput = buildSgOutput({
           pattern: p.pattern,
           files: ptcFiles,
+          rehydrate,
         });
         for (const ptcFile of ptcFiles) {
           if (ptcFile.lines.length > 0) {

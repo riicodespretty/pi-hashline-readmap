@@ -10,7 +10,14 @@ import { registerReadTool } from "../src/read.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = resolve(__dirname, "fixtures");
 
-async function callReadTool(params: { path: string; offset?: number; limit?: number; symbol?: string; map?: boolean }) {
+async function callReadTool(params: {
+  path: string;
+  offset?: number;
+  limit?: number;
+  symbol?: string;
+  map?: boolean;
+  bundle?: "local";
+}) {
   let capturedTool: any = null;
   const mockPi = { registerTool(def: any) { capturedTool = def; } };
   registerReadTool(mockPi as any);
@@ -110,7 +117,11 @@ describe("read contextHygiene metadata", () => {
 
   it("read tool attaches contextHygiene beside ptcValue without changing rendered text", async () => {
     const filePath = resolve(fixturesDir, "small.ts");
-    const result = await callReadTool({ path: filePath, symbol: "createDemoDirectory" });
+    const result = await callReadTool({
+      path: filePath,
+      symbol: "createDemoDirectory",
+      bundle: "local",
+    });
 
     expect(result.details?.contextHygiene).toEqual({
       schemaVersion: 1,
@@ -119,7 +130,12 @@ describe("read contextHygiene metadata", () => {
       resources: [
         buildFileResource(filePath),
         buildSymbolResource(filePath, "createDemoDirectory", "function"),
+        buildSymbolResource(filePath, "addUser", "method"),
       ],
+      rehydrate: {
+        tool: "read",
+        input: { path: filePath, symbol: "createDemoDirectory", bundle: "local" },
+      },
     });
     expect(result.details?.ptcValue.symbol).toEqual({
       query: "createDemoDirectory",
@@ -130,6 +146,19 @@ describe("read contextHygiene metadata", () => {
       endLine: 49,
     });
     expect((result.details?.ptcValue as any).contextHygiene).toBeUndefined();
-    expect(getTextContent(result)).toMatch(/^\[Symbol: createDemoDirectory \(function\), lines 45-49 of 49\]/);
+    expect(getTextContent(result)).toContain("## Requested symbol");
+    expect(getTextContent(result)).toContain("[Symbol: createDemoDirectory (function), lines 45-49 of 49]");
+  });
+
+  it("read tool preserves optional call inputs in rehydrate metadata", async () => {
+    const filePath = resolve(fixturesDir, "small.ts");
+    const result = await callReadTool({ path: filePath, offset: 2, limit: 3, map: true });
+
+    expect(result.details?.contextHygiene.rehydrate).toEqual({
+      tool: "read",
+      input: { path: filePath, offset: 2, limit: 3, map: true },
+    });
+    expect((result.details?.ptcValue as any).contextHygiene).toBeUndefined();
+    expect(getTextContent(result)).toContain("2:");
   });
 });
