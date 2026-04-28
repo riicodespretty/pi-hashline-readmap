@@ -31,6 +31,7 @@ This package consolidates those improvements into one extension instead of stack
 - Agent-optimized `ls` and `find` tools for file exploration
 - Optional `nu` tool for structured exploration with Nushell
 - Route-aware `bash` compression for tests, builds, Git, Docker, linters, package managers, and more
+- Context-hygiene metadata for read/search/command/mutation outputs, plus an opt-in debug report tool
 
 ## Quick Start
 
@@ -238,6 +239,8 @@ Use the bypass when the filtered output hides information you need.
 - supports literal or regex search
 - supports `summary: true` for per-file match counts
 - supports `scope: "symbol"` and `scopeContext` for symbol-local results
+- supports opt-in final visible output budgets with `PI_HASHLINE_GREP_MAX_LINES` and `PI_HASHLINE_GREP_MAX_BYTES`
+
 ### `ast_search`
 - wraps `ast-grep` for structure-aware code search
 - returns merged, anchored match blocks grouped by file
@@ -277,11 +280,14 @@ This package is configured with environment variables rather than a project-loca
 
 | Variable | Purpose | Default / behavior |
 |---|---|---|
+| `PI_HASHLINE_GREP_MAX_LINES` | Tighten `grep`'s final visible line budget | Positive base-10 integer; invalid/unset values use the built-in default; above-default values are clamped down |
+| `PI_HASHLINE_GREP_MAX_BYTES` | Tighten `grep`'s final visible byte budget | Positive base-10 integer; invalid/unset values use the built-in default; above-default values are clamped down |
 | `PI_HASHLINE_MAP_CACHE_DIR` | Override the persistent structural-map cache directory | Uses the provided path verbatim |
 | `XDG_CACHE_HOME` | Base directory for the persistent map cache when no explicit cache dir is set | Cache lives under `$XDG_CACHE_HOME/pi-hashline-readmap/maps` |
 | `PI_HASHLINE_NO_PERSIST_MAPS=1` | Disable the on-disk structural-map cache | Keeps caching in-memory only |
 | `PI_NUSHELL_CONFIG` | Override the Nushell config path used by `nu` | Otherwise prefers `~/.config/pi/nushell/config.nu`, then `--no-config-file` |
 | `PI_RTK_BYPASS=1` | Disable route-specific `bash` compression for one command invocation | ANSI is still stripped; anti-pattern hints still apply |
+| `PI_CONTEXT_HYGIENE_DEBUG=1` | Register the debug-only `context_hygiene_report` read-only tool | Disabled unless explicitly set to `1` |
 
 ## Structured output (`details.ptcValue`)
 
@@ -345,11 +351,17 @@ Policy summary:
 - `edit` is not safe-by-default and is mutating
 - `pi-prompt-assembler` may optionally consume this contract
 
+## Context hygiene metadata
+
+Tool results include additive `details.contextHygiene` metadata that classifies context as read, search, command output, or mutation context. This metadata is intended for downstream session/context-management integrations and does not change the visible tool output contract.
+
+When `PI_CONTEXT_HYGIENE_DEBUG=1` is set before starting pi, the extension also registers `context_hygiene_report`, a debug-only read-only tool that reports tracked context-hygiene resources, stale candidates, and retirement candidates without mutating tracker state.
+
 ## EventBus integration
 
 On load, the extension emits tool executor references for downstream consumers.
 
-The emitted/stashed executor surface always includes `read`, `edit`, `grep`, `ast_search`, `write`, `ls`, and `find`, plus `nu` when Nushell is available at runtime.
+The emitted/stashed executor surface always includes `read`, `edit`, `grep`, `ast_search`, `write`, `ls`, and `find`, plus `nu` when Nushell is available at runtime and `context_hygiene_report` when `PI_CONTEXT_HYGIENE_DEBUG=1`.
 
 ```ts
 pi.events.emit("hashline:tool-executors", {
@@ -361,6 +373,7 @@ pi.events.emit("hashline:tool-executors", {
   ls,
   find,
   ...(nu ? { nu } : {}),
+  ...(contextHygieneDebugTool ? { context_hygiene_report: contextHygieneDebugTool } : {}),
 });
 ```
 
@@ -400,6 +413,12 @@ npm install
 ```bash
 npm test
 npm run typecheck
+```
+
+Release candidates should also pass an npm package dry run:
+
+```bash
+npm pack --dry-run
 ```
 
 Before publishing or opening a PR, run the workspace checks above from a clean checkout and add any focused tests needed for the specific files or tools you changed.

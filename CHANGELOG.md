@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.8.0] - 2026-04-28
+
+### Added
+- Opt-in `grep` final output budget controls via `PI_HASHLINE_GREP_MAX_LINES` and `PI_HASHLINE_GREP_MAX_BYTES`; values can only tighten existing defaults and invalid values fall back safely.
+- Phase 0 context-hygiene metadata for read, search, command-output, and mutation tool results, including an opt-in `context_hygiene_report` debug tool behind `PI_CONTEXT_HYGIENE_DEBUG=1`.
+- Stale-context contract foundations for mutated-file context tracking and downstream context replacement work.
+
+### Fixed
+- `edit`: restore the default shell rendering path.
+- `edit`: preserve blank lines in `replace_lines` wrapped-line restoration.
+- Structural map cache: validate content hashes on in-memory cache hits to avoid stale maps.
+
+### Docs
+- Refresh README configuration, context-hygiene, release, and documentation links for the current codebase.
+- Update exploratory functional testing notes for the current suite size and coverage areas.
+
 ## [0.7.0] - 2026-04-20
 
 ### Added

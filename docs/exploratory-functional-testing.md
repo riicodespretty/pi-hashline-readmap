@@ -2,7 +2,7 @@
 
 Current repo snapshot note for `pi-hashline-readmap`.
 
-- Date: 2026-03-24
+- Date: 2026-04-28
 - Repo: `pi-hashline-readmap`
 - Scope: current expected behavior of the package, based on the present codebase and passing automated suite
 
@@ -19,7 +19,7 @@ Observed result:
 
 - `npm run typecheck` — passes
 - `npm test` — passes
-- Vitest suite: **107 test files / 524 tests** passing
+- Vitest suite: **234 test files / 1146 tests** passing
 
 This document is not a bug diary. It is the current testing reference for what the package is expected to do.
 
@@ -66,6 +66,7 @@ Expected behavior:
 - supports `ignoreCase`, `context`, `limit`, and `summary`
 - supports `scope: "symbol"` to group results by enclosing mapped symbol when available
 - truncates large result sets with explicit indicators instead of failing silently
+- supports opt-in final visible output budgets through `PI_HASHLINE_GREP_MAX_LINES` and `PI_HASHLINE_GREP_MAX_BYTES`
 - handles problematic file content defensively enough to avoid misleading raw output where possible
 
 Practical expectation:
@@ -98,6 +99,14 @@ Practical expectation:
 
 - common local development commands should consume less context than raw terminal output
 
+### Context hygiene metadata
+
+Expected behavior:
+
+- read/search/command/mutation tool results expose additive `details.contextHygiene` metadata
+- `context_hygiene_report` registers only when `PI_CONTEXT_HYGIENE_DEBUG=1`
+- debug reports are read-only and do not mutate tracker state
+
 ## Areas covered by the current automated suite
 
 The present test suite covers, at minimum:
@@ -112,6 +121,8 @@ The present test suite covers, at minimum:
 - map cache behavior
 - RTK / bash filter routing and compressor-specific behavior
 - public PTC policy/value contracts
+- context-hygiene metadata and debug-tool registration
+- configurable grep output budgets
 - README / prompts / scripts file integrity checks
 
 ## Manual spot-check guidance

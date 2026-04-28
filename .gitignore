@@ -42,6 +42,7 @@ yarn-error.log*
 # pi agent local state
 .megapowers/
 .pi/
+runs/workguards/
 
 # Local workspace / planning docs
 .zellij*
