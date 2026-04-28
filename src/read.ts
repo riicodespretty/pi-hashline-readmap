@@ -19,6 +19,7 @@ import { getOrGenerateMap } from "./map-cache";
 import { formatFileMapWithBudget } from "./readmap/formatter.js";
 import { findSymbol, type SymbolMatch } from "./readmap/symbol-lookup.js";
 import { buildReadOutput } from "./read-output.js";
+import { buildReadRehydrateDescriptor } from "./context-hygiene.js";
 import { buildLocalBundle } from "./read-local-bundle.js";
 import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 import { Text } from "@mariozechner/pi-tui";
@@ -573,6 +574,14 @@ const readOutput = buildReadOutput({
 		text: mapText,
 	},
 	...(bundleMetadata ? { bundle: bundleMetadata } : {}),
+	rehydrate: buildReadRehydrateDescriptor({
+		path: p.path,
+		offset: p.offset,
+		limit: p.limit,
+		symbol: p.symbol,
+		map: p.map,
+		bundle: p.bundle,
+	}),
 });
 
 return succeed({

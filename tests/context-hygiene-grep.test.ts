@@ -74,6 +74,7 @@ describe("grep contextHygiene metadata", () => {
       path: filePath,
       literal: true,
       scope: "symbol",
+      scopeContext: 0,
     });
 
     expect(result.details?.contextHygiene).toEqual({
@@ -84,6 +85,16 @@ describe("grep contextHygiene metadata", () => {
         buildFileResource(filePath),
         buildSymbolResource(filePath, "createDemoDirectory", "function"),
       ],
+      rehydrate: {
+        tool: "grep",
+        input: {
+          pattern: "createDemoDirectory",
+          path: filePath,
+          literal: true,
+          scope: "symbol",
+          scopeContext: 0,
+        },
+      },
     });
     expect((result.details?.ptcValue as any).contextHygiene).toBeUndefined();
     expect(result.details?.ptcValue.scopes.groups[0].symbol).toMatchObject({
@@ -92,5 +103,33 @@ describe("grep contextHygiene metadata", () => {
       startLine: 45,
       endLine: 49,
     });
+  });
+
+  it("grep tool preserves optional call inputs in rehydrate metadata", async () => {
+    const result = await callGrepTool({
+      pattern: "createdemodirectory",
+      path: fixturesDir,
+      glob: "small.ts",
+      literal: true,
+      ignoreCase: true,
+      context: 1,
+      summary: true,
+      limit: 20,
+    });
+
+    expect(result.details?.contextHygiene.rehydrate).toEqual({
+      tool: "grep",
+      input: {
+        pattern: "createdemodirectory",
+        path: fixturesDir,
+        glob: "small.ts",
+        literal: true,
+        ignoreCase: true,
+        context: 1,
+        summary: true,
+      },
+    });
+    expect((result.details?.contextHygiene.rehydrate.input as any).limit).toBeUndefined();
+    expect((result.details?.ptcValue as any).contextHygiene).toBeUndefined();
   });
 });

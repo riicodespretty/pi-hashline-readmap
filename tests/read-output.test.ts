@@ -100,6 +100,10 @@ describe("buildReadOutput", () => {
         appended: false,
         text: null,
       },
+      rehydrate: {
+        tool: "read",
+        input: { path: filePath },
+      },
     });
     expect(getTextContent(result)).toBe(built.text);
     expect(result.details?.ptcValue).toEqual(built.ptcValue);

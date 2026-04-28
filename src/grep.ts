@@ -9,6 +9,7 @@ import { looksLikeBinary } from "./binary-detect";
 import { ensureHashInit, formatHashlineDisplay, escapeControlCharsForDisplay } from "./hashline";
 import { buildPtcError, buildPtcLine } from "./ptc-value.js";
 import { buildGrepOutput } from "./grep-output.js";
+import { buildGrepRehydrateDescriptor } from "./context-hygiene.js";
 import { getOrGenerateMap } from "./map-cache.js";
 import { scopeGrepGroupsToSymbols } from "./grep-symbol-scope.js";
 import { resolveToCwd } from "./path-utils";
@@ -660,6 +661,17 @@ if (p.scope === "symbol" && !summary) {
 				scopeMode: p.scope === "symbol" && !summary ? "symbol" : undefined,
 				scopeWarnings,
 				passthroughLines,
+				rehydrate: buildGrepRehydrateDescriptor({
+					pattern: p.pattern,
+					path: p.path,
+					glob: p.glob,
+					literal: p.literal,
+					ignoreCase: p.ignoreCase,
+					context: p.context,
+					summary: p.summary,
+					scope: p.scope,
+					scopeContext: p.scopeContext,
+				}),
 			});
 
 			if (!summary && ptcRecords.length > 0) {

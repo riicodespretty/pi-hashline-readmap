@@ -92,6 +92,7 @@ describe("ast_search contextHygiene metadata", () => {
 
     const result = await callSgTool({
       pattern: "export function $NAME($$$PARAMS) { $$$BODY }",
+      lang: "typescript",
       path: filePath,
     });
 
@@ -100,6 +101,14 @@ describe("ast_search contextHygiene metadata", () => {
       tool: "ast_search",
       classification: "search-context",
       resources: [buildFileResource(filePath)],
+      rehydrate: {
+        tool: "ast_search",
+        input: {
+          pattern: "export function $NAME($$$PARAMS) { $$$BODY }",
+          lang: "typescript",
+          path: filePath,
+        },
+      },
     });
     expect((result.details?.ptcValue as any).contextHygiene).toBeUndefined();
     expect(result.details?.ptcValue.files[0]).toMatchObject({

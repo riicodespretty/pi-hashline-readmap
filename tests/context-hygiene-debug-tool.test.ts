@@ -4,6 +4,7 @@ import {
   buildCommandResource,
   buildContextHygieneMetadata,
   buildFileResource,
+  buildReadRehydrateDescriptor,
   getContextHygieneTracker,
 } from "../src/context-hygiene.js";
 
@@ -71,12 +72,14 @@ describe("context_hygiene_report debug tool", () => {
     const fileResource = buildFileResource("tmp/context-hygiene-debug-tool-task9.ts");
     const commandResource = buildCommandResource("npm test -- --context-hygiene-debug-tool-task9");
     const tracker = getContextHygieneTracker();
+    const readRehydrate = buildReadRehydrateDescriptor({ path: "tmp/context-hygiene-debug-tool-task9.ts" });
 
     const readEvent = tracker.record(
       buildContextHygieneMetadata({
         tool: "read",
         classification: "read-context",
         resources: [fileResource],
+        rehydrate: readRehydrate,
       }),
       { resultId: "debug-tool-read-task9" },
     );
@@ -118,6 +121,19 @@ describe("context_hygiene_report debug tool", () => {
       staleEventIds: [readEvent.id],
       mutationEventId: mutationEvent.id,
       reason: "mutation-after-read",
+      staleResults: [
+        {
+          status: "stale",
+          originalTool: "read",
+          originalEventId: readEvent.id,
+          originalResultId: "debug-tool-read-task9",
+          staleResourceKeys: [fileResource.key],
+          invalidatingMutationEventId: mutationEvent.id,
+          invalidatingMutationResultId: "debug-tool-mutation-task9",
+          reason: "mutation-after-read",
+          rehydrate: readRehydrate,
+        },
+      ],
     });
     expect(result.details.ptcValue.retirementCandidates).toContainEqual({
       resourceKey: commandResource.key,

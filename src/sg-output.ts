@@ -4,6 +4,7 @@ import {
   buildFileResource,
   buildSymbolResource,
   type ContextHygieneMetadata,
+  type ContextHygieneRehydrateDescriptor,
   type ContextHygieneResource,
 } from "./context-hygiene.js";
 
@@ -18,6 +19,7 @@ export interface SgOutputFile {
 export interface BuildSgOutputInput {
   pattern: string;
   files: SgOutputFile[];
+  rehydrate?: ContextHygieneRehydrateDescriptor | null;
 }
 
 export interface SgOutputResult {
@@ -45,6 +47,7 @@ export function buildSgOutput(input: BuildSgOutputInput): SgOutputResult {
         tool: "ast_search",
         classification: "search-context",
         resources: [],
+        rehydrate: input.rehydrate ?? undefined,
       }),
     };
   }
@@ -79,6 +82,7 @@ export function buildSgOutput(input: BuildSgOutputInput): SgOutputResult {
       tool: "ast_search",
       classification: "search-context",
       resources: contextHygieneResources,
+      rehydrate: input.rehydrate ?? undefined,
     }),
   };
 }

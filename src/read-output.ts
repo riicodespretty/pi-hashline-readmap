@@ -10,6 +10,7 @@ import {
   buildFileResource,
   buildSymbolResource,
   type ContextHygieneMetadata,
+  type ContextHygieneRehydrateDescriptor,
   type ContextHygieneResource,
 } from "./context-hygiene.js";
 
@@ -63,6 +64,7 @@ export interface ReadOutputInput {
   symbol?: ReadSymbolMetadata | null;
   map?: ReadMapMetadata;
   bundle?: ReadBundleMetadata | null;
+  rehydrate?: ContextHygieneRehydrateDescriptor | null;
 }
 
 export interface ReadOutputResult {
@@ -196,6 +198,7 @@ export function buildReadOutput(input: ReadOutputInput): ReadOutputResult {
     tool: "read",
     classification: "read-context",
     resources: contextHygieneResources,
+    rehydrate: input.rehydrate ?? undefined,
   });
 
   return {

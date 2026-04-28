@@ -10,6 +10,7 @@ import {
   buildFileResource,
   buildSymbolResource,
   type ContextHygieneMetadata,
+  type ContextHygieneRehydrateDescriptor,
   type ContextHygieneResource,
 } from "./context-hygiene.js";
 
@@ -64,6 +65,7 @@ export interface BuildGrepOutputInput {
   scopeMode?: "symbol";
   scopeWarnings?: GrepScopeWarning[];
   passthroughLines?: string[];
+  rehydrate?: ContextHygieneRehydrateDescriptor | null;
 }
 
 export interface GrepOutputResult {
@@ -185,6 +187,7 @@ export function buildGrepOutput(input: BuildGrepOutputInput): GrepOutputResult {
     tool: "grep",
     classification: "search-context",
     resources: contextHygieneResources,
+    rehydrate: input.rehydrate ?? undefined,
   });
   return {
     text,
