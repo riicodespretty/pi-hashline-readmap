@@ -30,4 +30,28 @@ describe("context hygiene stale result contract", () => {
     expect((record as any).state).toBeUndefined();
     expect((record as any).retired).toBeUndefined();
   });
+
+  it("preserves the original context classification when provided", () => {
+    const record = buildStaleContextRecord({
+      originalTool: "grep",
+      originalClassification: "search-context",
+      originalEventId: 3,
+      originalResultId: "grep-result-1",
+      staleResourceKeys: ["file:src/grep.ts"],
+      invalidatingMutationEventId: 4,
+      invalidatingMutationResultId: "edit-result-1",
+    });
+
+    expect(record).toMatchObject({
+      status: "stale",
+      originalTool: "grep",
+      originalClassification: "search-context",
+      originalEventId: 3,
+      originalResultId: "grep-result-1",
+      staleResourceKeys: ["file:src/grep.ts"],
+      invalidatingMutationEventId: 4,
+      invalidatingMutationResultId: "edit-result-1",
+      reason: "mutation-after-read",
+    });
+  });
 });

@@ -109,6 +109,7 @@ export type ContextHygieneStaleInvalidationReason = "mutation-after-read";
 export interface ContextHygieneStaleRecord {
   status: "stale";
   originalTool: string;
+  originalClassification?: ContextHygieneClassification;
   originalEventId?: number;
   originalResultId?: string;
   staleResourceKeys: string[];
@@ -120,6 +121,7 @@ export interface ContextHygieneStaleRecord {
 
 export interface BuildStaleContextRecordInput {
   originalTool: string;
+  originalClassification?: ContextHygieneClassification;
   originalEventId?: number;
   originalResultId?: string;
   staleResourceKeys: readonly string[];
@@ -150,6 +152,7 @@ export function buildStaleContextRecord(input: BuildStaleContextRecordInput): Co
     invalidatingMutationEventId: input.invalidatingMutationEventId,
     reason: input.reason ?? "mutation-after-read",
   };
+  if (input.originalClassification) record.originalClassification = input.originalClassification;
   if (input.originalEventId !== undefined) record.originalEventId = input.originalEventId;
   if (input.originalResultId) record.originalResultId = input.originalResultId;
   if (input.invalidatingMutationResultId) record.invalidatingMutationResultId = input.invalidatingMutationResultId;
@@ -561,6 +564,7 @@ class DefaultContextHygieneTracker implements ContextHygieneTracker {
   generateReport(): ContextHygieneReport {
     const eventsByResource = new Map<string, ContextHygieneEvent[]>();
     const readEventsByResource = new Map<string, ContextHygieneEvent[]>();
+    const staleableEventsByResource = new Map<string, ContextHygieneEvent[]>();
     const commandEventsByResource = new Map<string, ContextHygieneEvent[]>();
     const mutationEventsByResource = new Map<string, ContextHygieneEvent[]>();
     const byClassification = createEmptyClassificationCounts();
@@ -569,13 +573,20 @@ class DefaultContextHygieneTracker implements ContextHygieneTracker {
     for (const event of this.events) {
       byClassification[event.classification] += 1;
       byTool[event.tool] = (byTool[event.tool] ?? 0) + 1;
+      for (const resource of event.resources) {
+        if (event.classification === "read-context" || event.classification === "search-context") {
+          const staleableBucket = staleableEventsByResource.get(resource.key) ?? [];
+          staleableBucket.push(event);
+          staleableEventsByResource.set(resource.key, staleableBucket);
+        }
+      }
 
       for (const resource of event.resources) {
         const bucket = eventsByResource.get(resource.key) ?? [];
         bucket.push(event);
         eventsByResource.set(resource.key, bucket);
 
-        if (event.classification === "read-context" || event.classification === "search-context") {
+        if (event.classification === "read-context") {
           const readBucket = readEventsByResource.get(resource.key) ?? [];
           readBucket.push(event);
           readEventsByResource.set(resource.key, readBucket);
@@ -610,27 +621,32 @@ class DefaultContextHygieneTracker implements ContextHygieneTracker {
     const retirementCandidates: ContextHygieneRetirementCandidateReportEntry[] = [];
 
     for (const resourceKey of sortResourceKeys(mutationEventsByResource.keys())) {
-      const reads = readEventsByResource.get(resourceKey) ?? [];
+      const staleableEvents = staleableEventsByResource.get(resourceKey) ?? [];
       const mutations = mutationEventsByResource.get(resourceKey) ?? [];
       for (const mutation of mutations) {
-        const priorReads = reads.filter((read) => read.id < mutation.id);
-        const priorReadIds = priorReads.map((read) => read.id);
-        if (priorReadIds.length === 0) continue;
-        mutationAfterRead.push({ resourceKey, readEventIds: priorReadIds, mutationEventId: mutation.id });
+        const priorReads = (readEventsByResource.get(resourceKey) ?? []).filter((read) => read.id < mutation.id);
+        if (priorReads.length > 0) {
+          mutationAfterRead.push({ resourceKey, readEventIds: priorReads.map((read) => read.id), mutationEventId: mutation.id });
+        }
+
+        const priorStaleableEvents = staleableEvents.filter((event) => event.id < mutation.id);
+        const priorStaleableEventIds = priorStaleableEvents.map((event) => event.id);
+        if (priorStaleableEventIds.length === 0) continue;
         staleCandidates.push({
           resourceKey,
-          staleEventIds: priorReadIds,
+          staleEventIds: priorStaleableEventIds,
           mutationEventId: mutation.id,
           reason: "mutation-after-read",
-          staleResults: priorReads.map((read) => buildStaleContextRecord({
-            originalTool: read.tool,
-            originalEventId: read.id,
-            originalResultId: read.resultId,
+          staleResults: priorStaleableEvents.map((event) => buildStaleContextRecord({
+            originalTool: event.tool,
+            originalClassification: event.classification,
+            originalEventId: event.id,
+            originalResultId: event.resultId,
             staleResourceKeys: [resourceKey],
             invalidatingMutationEventId: mutation.id,
             invalidatingMutationResultId: mutation.resultId,
             reason: "mutation-after-read",
-            rehydrate: read.rehydrate,
+            rehydrate: event.rehydrate,
           })),
         });
       }
@@ -639,12 +655,7 @@ class DefaultContextHygieneTracker implements ContextHygieneTracker {
     for (const resourceKey of sortResourceKeys(commandEventsByResource.keys())) {
       const commands = commandEventsByResource.get(resourceKey) ?? [];
       for (let index = 1; index < commands.length; index += 1) {
-        retirementCandidates.push({
-          resourceKey,
-          eventIds: commands.slice(0, index).map((event) => event.id),
-          supersededByEventId: commands[index].id,
-          reason: "command-rerun",
-        });
+        retirementCandidates.push({ resourceKey, eventIds: commands.slice(0, index).map((event) => event.id), supersededByEventId: commands[index].id, reason: "command-rerun" });
       }
     }
 

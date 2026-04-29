@@ -94,6 +94,7 @@ describe("context hygiene telemetry tracker", () => {
             {
               status: "stale",
               originalTool: "read",
+              originalClassification: "read-context",
               originalEventId: 1,
               originalResultId: "read-1",
               staleResourceKeys: ["file:src/read.ts"],
@@ -105,6 +106,7 @@ describe("context hygiene telemetry tracker", () => {
             {
               status: "stale",
               originalTool: "read",
+              originalClassification: "read-context",
               originalEventId: 2,
               originalResultId: "read-2",
               staleResourceKeys: ["file:src/read.ts"],
