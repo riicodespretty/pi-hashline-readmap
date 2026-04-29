@@ -125,6 +125,7 @@ describe("context_hygiene_report debug tool", () => {
         {
           status: "stale",
           originalTool: "read",
+          originalClassification: "read-context",
           originalEventId: readEvent.id,
           originalResultId: "debug-tool-read-task9",
           staleResourceKeys: [fileResource.key],
