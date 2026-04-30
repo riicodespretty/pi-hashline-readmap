@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { readFileSync, writeFileSync } from "node:fs";
 
 export type BashOriginalOutputSource = "pi-full-output-path" | "pi-visible-fallback" | "pi-visible";
@@ -72,6 +72,18 @@ export function extractVisibleFullOutputPath(visibleText: string): string | unde
   return match?.[1]?.trim() || undefined;
 }
 
+function isPathInside(parent: string, candidate: string): boolean {
+  const relativePath = relative(parent, candidate);
+  return relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath));
+}
+
+function validateFullOutputPath(fs: BashOriginalOutputFs, value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (value.trim() !== value || value === "") return undefined;
+  if (!isAbsolute(value)) return undefined;
+  return isPathInside(fs.tempDir(), value) ? value : undefined;
+}
+
 function writeSnapshot(fs: BashOriginalOutputFs, visibleText: string): string {
   const path = join(fs.tempDir(), `hashline-bash-original-${fs.randomId()}.txt`);
   fs.writeFile(path, visibleText, { mode: 0o600, flag: "wx" });
@@ -85,8 +97,8 @@ export function selectBashOriginalOutput(options: SelectBashOriginalOutputOption
   const fs = mergeFs(options.fs);
   const visibleLineCount = lineCount(visibleText);
   const visibleByteCount = byteCount(visibleText);
-  const metadataPath = typeof options.fullOutputPath === "string" ? options.fullOutputPath : undefined;
-  const visibleNoticePath = extractVisibleFullOutputPath(visibleText);
+  const metadataPath = validateFullOutputPath(fs, options.fullOutputPath);
+  const visibleNoticePath = validateFullOutputPath(fs, extractVisibleFullOutputPath(visibleText));
   const fullOutputPath = metadataPath ?? visibleNoticePath;
 
   let fallbackSource: BashOriginalOutputSource = "pi-visible";
@@ -150,4 +162,57 @@ export function selectBashOriginalOutput(options: SelectBashOriginalOutputOption
   };
 
   return { inputForRtk: visibleText, metadata };
+}
+
+export interface EnsureBashOriginalOutputSnapshotOptions {
+  visibleText: string;
+  metadata?: BashOriginalOutputMetadata;
+  enabled?: boolean;
+  fs?: Partial<BashOriginalOutputFs>;
+}
+
+export function ensureBashOriginalOutputSnapshot(
+  options: EnsureBashOriginalOutputSnapshotOptions,
+): BashOriginalOutputMetadata | undefined {
+  const enabled = options.enabled !== false;
+  const visibleText = options.visibleText;
+  const existing = options.metadata;
+  if (!enabled || visibleText === "") return existing;
+  if (existing?.restoredContentForRtk || existing?.originalPath) return existing;
+
+  const visibleLineCount = existing?.visibleLineCount ?? lineCount(visibleText);
+  const visibleByteCount = existing?.visibleByteCount ?? byteCount(visibleText);
+  const originalLineCount = existing?.originalLineCount ?? visibleLineCount;
+  const originalByteCount = existing?.originalByteCount ?? visibleByteCount;
+  const base: BashOriginalOutputMetadata = {
+    enabled: true,
+    source: existing?.source ?? "pi-visible",
+    restoredContentForRtk: false,
+    snapshotNeeded: true,
+    snapshotWritten: false,
+    snapshotPath: undefined,
+    originalPath: undefined,
+    originalLineCount,
+    originalByteCount,
+    visibleLineCount,
+    visibleByteCount,
+    fullOutputReadError: existing?.fullOutputReadError,
+    snapshotWriteError: existing?.snapshotWriteError,
+  };
+
+  try {
+    const snapshotPath = writeSnapshot(mergeFs(options.fs), visibleText);
+    return {
+      ...base,
+      snapshotWritten: true,
+      snapshotPath,
+      originalPath: snapshotPath,
+      snapshotWriteError: existing?.snapshotWriteError,
+    };
+  } catch (error) {
+    return {
+      ...base,
+      snapshotWriteError: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
