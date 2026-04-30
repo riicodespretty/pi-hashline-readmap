@@ -10,6 +10,7 @@ import { ctagsMapper, MAPPER_VERSION as CTAGS_VERSION } from "./mappers/ctags.js
 import { fallbackMapper, MAPPER_VERSION as FALLBACK_VERSION } from "./mappers/fallback.js";
 import { goMapper, MAPPER_VERSION as GO_VERSION } from "./mappers/go.js";
 import { jsonMapper, MAPPER_VERSION as JSON_VERSION } from "./mappers/json.js";
+import { javaMapper, MAPPER_VERSION as JAVA_VERSION } from "./mappers/java.js";
 import { jsonlMapper, MAPPER_VERSION as JSONL_VERSION } from "./mappers/jsonl.js";
 import { markdownMapper, MAPPER_VERSION as MARKDOWN_VERSION } from "./mappers/markdown.js";
 import { pythonMapper, MAPPER_VERSION as PYTHON_VERSION } from "./mappers/python.js";
@@ -50,6 +51,8 @@ const MAPPERS_V: Record<string, MapperEntry> = {
   rust: { fn: rustMapper, version: RUST_VERSION },
   cpp: { fn: cppMapper, version: CPP_VERSION },
   "c-header": { fn: cppMapper, version: CPP_VERSION }, // .h files
+  // Phase 8: Java tree-sitter mapper
+  java: { fn: javaMapper, version: JAVA_VERSION },
   // Phase 2: Regex/subprocess mappers
   sql: { fn: sqlMapper, version: SQL_VERSION },
   json: { fn: jsonMapper, version: JSON_VERSION },

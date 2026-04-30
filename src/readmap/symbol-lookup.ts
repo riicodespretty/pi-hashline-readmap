@@ -78,6 +78,16 @@ function resolveDotPath(symbols: FileSymbol[], parts: string[]): SymbolCandidate
   return candidates;
 }
 
+const JAVA_TOP_LEVEL_TYPE_KINDS = new Set(["class", "interface", "enum", "module"]);
+
+function preferJavaTopLevelType(map: FileMap, candidates: SymbolCandidate[]): SymbolCandidate | undefined {
+  if (map.language !== "Java") return undefined;
+  const topLevelTypes = candidates.filter(
+    (candidate) => !candidate.parentName && JAVA_TOP_LEVEL_TYPE_KINDS.has(candidate.symbol.kind),
+  );
+  return topLevelTypes.length === 1 ? topLevelTypes[0] : undefined;
+}
+
 export function findSymbol(map: FileMap, query: string): SymbolLookupResult {
   const q = query.trim();
   if (!q) return { type: "not-found" };
@@ -98,7 +108,11 @@ export function findSymbol(map: FileMap, query: string): SymbolLookupResult {
 
   const exact = allSymbols.filter((c) => c.symbol.name === q);
   if (exact.length === 1) return { type: "found", symbol: toMatch(exact[0].symbol, exact[0].parentName) };
-  if (exact.length > 1) return { type: "ambiguous", candidates: toMatches(exact.slice(0, 5)) };
+  if (exact.length > 1) {
+    const preferred = preferJavaTopLevelType(map, exact);
+    if (preferred) return { type: "found", symbol: toMatch(preferred.symbol, preferred.parentName) };
+    return { type: "ambiguous", candidates: toMatches(exact.slice(0, 5)) };
+  }
 
   if (q.includes(".")) {
     const parts = q.split(".").map((p) => p.trim());

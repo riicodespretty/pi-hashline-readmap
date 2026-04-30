@@ -26,6 +26,9 @@ const EXTENSION_MAP: Record<string, LanguageInfo> = {
   // Go
   ".go": { id: "go", name: "Go" },
 
+  // Java
+  ".java": { id: "java", name: "Java" },
+
   // Swift
   ".swift": { id: "swift", name: "Swift" },
 
