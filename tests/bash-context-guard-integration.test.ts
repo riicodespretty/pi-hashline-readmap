@@ -158,4 +158,30 @@ describe("bash context guard integration", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+
+  it("writes an original/pre-RTK snapshot when stricter guard env trims without a Pi full-output path", async () => {
+    vi.spyOn(gitModule, "compactGitOutput").mockReturnValue(["post-1", "post-2", "post-3", "post-4"].join("\n"));
+    const handlers = await loadHandlers("trim-snapshot");
+
+    const result = await handlers.tool_result({
+      type: "tool_result",
+      toolName: "bash",
+      toolCallId: "bash-guard-trim-snapshot",
+      input: { command: "git diff" },
+      content: [{ type: "text", text: "VISIBLE ORIGINAL" }],
+      isError: false,
+    });
+
+    expect(result.details.bashContextGuard).toMatchObject({ enabled: true, trimmed: true, trimWanted: true });
+    expect(result.details.bashOriginalOutput).toMatchObject({
+      source: "pi-visible",
+      restoredContentForRtk: false,
+      snapshotNeeded: true,
+      snapshotWritten: true,
+    });
+    expect(result.details.bashOriginalOutput.originalPath).toEqual(expect.any(String));
+    expect(result.details.bashOriginalOutput.snapshotPath).toEqual(expect.any(String));
+    expect(result.content[0].text).toContain("Original/pre-RTK output:");
+  });
 });

@@ -208,6 +208,18 @@ PI_RTK_BYPASS=1 git log --stat
 
 Use the bypass when the filtered output hides information you need.
 
+### Bash context guard and recoverability
+
+Bash output is processed in layers:
+
+1. The extension first selects the best original/pre-RTK output source. When Pi provides a valid temporary `fullOutputPath`, that file is used for RTK compression. Otherwise the visible Bash text is used.
+2. Route-specific RTK compression may reduce noisy command output unless `PI_RTK_BYPASS=1` is set for that command invocation.
+3. The Bash context guard runs after RTK. When the final post-RTK text is still too large, the guard writes the full post-RTK output to a temporary file and replaces visible output with a recoverable head/tail preview.
+
+The guard is default-on. The shipped default-on policy supersedes the earlier opt-in proposal from the M9 design discussion. Set `PI_HASHLINE_BASH_CONTEXT_GUARD=0` to disable both the Bash context guard and the original-output restoration layer.
+
+`PI_RTK_BYPASS=1` only bypasses route-specific RTK compression. It does not disable the Bash context guard; large raw output can still be guarded unless `PI_HASHLINE_BASH_CONTEXT_GUARD=0` is also set.
+
 ## Tool reference
 
 ### `read`
@@ -287,6 +299,11 @@ This package is configured with environment variables rather than a project-loca
 | `PI_HASHLINE_NO_PERSIST_MAPS=1` | Disable the on-disk structural-map cache | Keeps caching in-memory only |
 | `PI_NUSHELL_CONFIG` | Override the Nushell config path used by `nu` | Otherwise prefers `~/.config/pi/nushell/config.nu`, then `--no-config-file` |
 | `PI_RTK_BYPASS=1` | Disable route-specific `bash` compression for one command invocation | ANSI is still stripped; anti-pattern hints still apply |
+| `PI_HASHLINE_BASH_CONTEXT_GUARD=0` | Disable the Bash context guard and original-output restoration layer | Any value other than exact `0` leaves the default-on guard enabled |
+| `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES` | Tighten the post-RTK Bash guard line budget | Positive base-10 integer; invalid/unset values use `2000`; above-default values are clamped down |
+| `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES` | Tighten the post-RTK Bash guard byte budget | Positive base-10 integer interpreted as raw bytes; invalid/unset values use `51200`; above-default values are clamped down |
+| `PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES` | Tighten the guarded preview head size | Positive base-10 integer; invalid/unset values use `80`; above-default values are clamped down |
+| `PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES` | Tighten the guarded preview tail size | Positive base-10 integer; invalid/unset values use `120`; above-default values are clamped down |
 | `PI_CONTEXT_HYGIENE_DEBUG=1` | Register the debug-only `context_hygiene_report` read-only tool | Disabled unless explicitly set to `1` |
 
 ## Structured output (`details.ptcValue`)

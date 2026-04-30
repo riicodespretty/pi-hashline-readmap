@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.8.2] - 2026-04-30
+
+### Fixed
+- Harden Bash recoverability by validating Pi full-output paths before reading them and by preserving original/pre-RTK snapshots when the Bash context guard trims without a valid Pi original path.
+- Preserve recoverability metadata when trim-time original snapshot writing fails.
+
+### Docs
+- Document the Bash context guard variables, default-on policy, `PI_HASHLINE_BASH_CONTEXT_GUARD=0`, raw-byte/positive-integer parsing, clamp/fallback semantics, and `PI_RTK_BYPASS=1` interaction.
+- Record the release instruction to bump the package number whenever the Bash guard contract docs/release notes are updated.
+
 ## [0.8.0] - 2026-04-28
 
 ### Added

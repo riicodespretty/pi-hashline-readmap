@@ -8,8 +8,8 @@ import { registerWriteTool } from "./src/write.js";
 import { registerLsTool } from "./src/ls.js";
 import { registerFindTool } from "./src/find.js";
 import { filterBashOutput } from "./src/rtk/bash-filter.js";
-import { selectBashOriginalOutput } from "./src/rtk/bash-original-output.js";
-import { applyBashContextGuard, resolveBashContextGuardConfig } from "./src/rtk/bash-context-guard.js";
+import { ensureBashOriginalOutputSnapshot, selectBashOriginalOutput } from "./src/rtk/bash-original-output.js";
+import { applyBashContextGuard, resolveBashContextGuardConfig, type BashContextGuardConfig } from "./src/rtk/bash-context-guard.js";
 import { stripAnsi } from "./src/rtk/ansi.js";
 import { applyContextHygieneStaleContext } from "./src/context-application.js";
 import { buildBashCommandState } from "./src/bash-command-state.js";
@@ -111,6 +111,10 @@ function buildRtkNotice(
   if (info.compressionRatio >= 0.5) return null;
   const pct = Math.round((1 - info.compressionRatio) * 100);
   return `[RTK: compressed ${info.technique} output ${formatBytes(info.originalBytes)} → ${formatBytes(info.outputBytes)} (${pct}% saved). Use \`PI_RTK_BYPASS=1 ${command}\` to see full output.]`;
+}
+
+function willBashContextGuardTrim(text: string, config: BashContextGuardConfig): boolean {
+  return config.enabled && text !== "" && (text.split("\n").length > config.maxLines || Buffer.byteLength(text, "utf8") > config.maxBytes);
 }
 
 export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
@@ -251,20 +255,28 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
     if (!BASH_FILTER_ENABLED) {
       const stripped = stripAnsi(originalText);
       const finalText = applyWarning(stripped);
+      const originalMetadataForGuard = willBashContextGuardTrim(finalText, bashContextGuardConfig)
+        ? ensureBashOriginalOutputSnapshot({
+            visibleText: originalText,
+            metadata: originalSelection.metadata,
+            enabled: bashContextGuardConfig.enabled,
+          })
+        : originalSelection.metadata;
       const guarded = applyBashContextGuard({
         text: finalText,
         command,
-        originalMetadata: originalSelection.metadata,
+        originalMetadata: originalMetadataForGuard,
         config: bashContextGuardConfig,
       });
-      if (guarded.text === originalText && !originalSelection.metadata) return undefined;
+      const bashOriginalOutput = guarded.metadata.trimmed ? originalMetadataForGuard : originalSelection.metadata;
+      if (guarded.text === originalText && !bashOriginalOutput) return undefined;
       return {
         content: [{ type: "text" as const, text: guarded.text }, ...nonTextContent],
         details: {
           ...existingDetails,
           contextHygiene,
           bashContextGuard: guarded.metadata,
-          ...(originalSelection.metadata ? { bashOriginalOutput: originalSelection.metadata } : {}),
+          ...(bashOriginalOutput ? { bashOriginalOutput } : {}),
         },
       };
     }
@@ -275,12 +287,20 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
     const notice = buildRtkNotice(info, command, output === "");
     const body = notice ? `${notice}\n${output}` : output;
     const finalText = applyWarning(body);
+    const originalMetadataForGuard = willBashContextGuardTrim(finalText, bashContextGuardConfig)
+      ? ensureBashOriginalOutputSnapshot({
+          visibleText: originalText,
+          metadata: originalSelection.metadata,
+          enabled: bashContextGuardConfig.enabled,
+        })
+      : originalSelection.metadata;
     const guarded = applyBashContextGuard({
       text: finalText,
       command,
-      originalMetadata: originalSelection.metadata,
+      originalMetadata: originalMetadataForGuard,
       config: bashContextGuardConfig,
     });
+    const bashOriginalOutput = guarded.metadata.trimmed ? originalMetadataForGuard : originalSelection.metadata;
     return {
       content: [{ type: "text" as const, text: guarded.text }, ...nonTextContent],
       details: {
@@ -288,7 +308,7 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
         compressionInfo: info,
         contextHygiene,
         bashContextGuard: guarded.metadata,
-        ...(originalSelection.metadata ? { bashOriginalOutput: originalSelection.metadata } : {}),
+        ...(bashOriginalOutput ? { bashOriginalOutput } : {}),
       },
     };
   });

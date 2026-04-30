@@ -94,6 +94,12 @@ Expected behavior:
 - includes targeted compression for tests, build tools, git, linters, docker, package managers, HTTP clients, transfer tools, and file-listing commands
 - strips ANSI noise
 - leaves truly useful output intact enough that the command result remains actionable
+- validates Pi-provided Bash `fullOutputPath` values before reading them and only restores from valid temporary full-output files
+- writes recoverable full post-RTK output when the Bash context guard trims final output
+- writes an original/pre-RTK snapshot when the guard trims and Pi did not provide a valid original full-output path
+- exposes stricter-only guard controls through `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES`, `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES`, `PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES`, and `PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES`
+- disables the guard/original-restoration layer only when `PI_HASHLINE_BASH_CONTEXT_GUARD=0`
+- keeps `PI_RTK_BYPASS=1` scoped to RTK compression; bypassed raw output is still eligible for context-guard trimming
 
 Practical expectation:
 
@@ -119,7 +125,7 @@ The present test suite covers, at minimum:
 - `ast_search` formatting, schema handling, execution behavior, no-match behavior, and path handling
 - binary / control-character handling regressions
 - map cache behavior
-- RTK / bash filter routing and compressor-specific behavior
+- RTK / bash filter routing, Bash context guard recoverability, guard configuration, and compressor-specific behavior
 - public PTC policy/value contracts
 - context-hygiene metadata and debug-tool registration
 - configurable grep output budgets

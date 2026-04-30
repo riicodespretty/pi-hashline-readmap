@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { selectBashOriginalOutput } from "../src/rtk/bash-original-output.js";
+import { ensureBashOriginalOutputSnapshot, selectBashOriginalOutput } from "../src/rtk/bash-original-output.js";
 
 describe("selectBashOriginalOutput", () => {
   it("uses visible text and records counts without snapshot for small output", () => {
@@ -263,5 +263,74 @@ describe("selectBashOriginalOutput", () => {
 
     expect(result).toEqual({ inputForRtk: "" });
     expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it("records original snapshot write failures when forced at trim time", () => {
+    const metadata = selectBashOriginalOutput({
+      visibleText: "small original",
+      snapshotMaxLines: 99,
+      snapshotMaxBytes: 999,
+      fs: {
+        readFile: vi.fn(),
+        writeFile: vi.fn(),
+        randomId: () => "pre-existing-id",
+        tempDir: () => "/tmp/hashline-test",
+      },
+    }).metadata;
+
+    const result = ensureBashOriginalOutputSnapshot({
+      visibleText: "small original",
+      metadata,
+      fs: {
+        readFile: vi.fn(),
+        writeFile: () => { throw new Error("disk full"); },
+        randomId: () => "forced-fail-id",
+        tempDir: () => "/tmp/hashline-test",
+      },
+    });
+
+    expect(result).toMatchObject({
+      source: "pi-visible",
+      restoredContentForRtk: false,
+      snapshotNeeded: true,
+      snapshotWritten: false,
+      snapshotPath: undefined,
+      originalPath: undefined,
+      originalLineCount: 1,
+      originalByteCount: 14,
+      visibleLineCount: 1,
+      visibleByteCount: 14,
+    });
+    expect(result?.snapshotWriteError).toContain("disk full");
+  });
+
+  it("does not read non-temp full-output paths before validation", () => {
+    const readFile = vi.fn(() => {
+      throw new Error("BUG: unsafe read attempted");
+    });
+    const writeFile = vi.fn();
+
+    const result = selectBashOriginalOutput({
+      visibleText: "visible fallback",
+      fullOutputPath: "/etc/passwd",
+      snapshotMaxLines: 99,
+      snapshotMaxBytes: 999,
+      fs: {
+        readFile,
+        writeFile,
+        randomId: () => "unsafe-path-id",
+        tempDir: () => "/tmp/hashline-test",
+      },
+    });
+
+    expect(readFile).not.toHaveBeenCalled();
+    expect(result.inputForRtk).toBe("visible fallback");
+    expect(result.metadata).toMatchObject({
+      source: "pi-visible",
+      restoredContentForRtk: false,
+      snapshotNeeded: false,
+      snapshotWritten: false,
+    });
+    expect(result.metadata?.fullOutputReadError).toBeUndefined();
   });
 });
