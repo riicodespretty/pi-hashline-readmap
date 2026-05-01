@@ -118,13 +118,26 @@ function willBashContextGuardTrim(text: string, config: BashContextGuardConfig):
 }
 
 export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
+  // readTurns maps an absolute path to the tracker event id of the most recent
+  // live-anchor tool result for that path (read / grep / ast_search / write).
+  // When the provider-context handler masks a prior live-anchor read into a
+  // stale placeholder, we expire the corresponding entry so wasReadInSession
+  // stops returning true until the agent re-reads the file.
   const readTurns = new Map<string, number>();
-  let currentTurn = 0;
   const doomLoopState = createDoomLoopState();
   resetContextHygieneTracker();
   const noteRead = (absolutePath: string) => {
-    currentTurn += 1;
-    readTurns.set(absolutePath, currentTurn);
+    // noteRead is invoked synchronously from inside read/grep/ast_search/write
+    // BEFORE the tool result is dispatched to the tool_result handler that
+    // calls tracker.record(). So the just-finishing tool's event will receive
+    // id = report.eventCount + 1 once tool_result fires. We anchor readTurns
+    // to that anticipated id so the entry is strictly newer than every
+    // mutation event id <= the current eventCount, which is exactly what
+    // expireStaleReadTurns compares against.
+    const tracker = getContextHygieneTracker();
+    const report = tracker.generateReport();
+    const eventId = report.eventCount + 1;
+    readTurns.set(absolutePath, eventId);
   };
   const wasReadInSession = (absolutePath: string) => readTurns.has(absolutePath);
 
@@ -167,12 +180,30 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
     return undefined;
   });
 
+  // Expire readTurns entries whose tracked live-anchor event id has been
+  // superseded by a later same-file mutation (i.e. the prior read has been
+  // masked into a stale placeholder by applyContextHygieneStaleContext).
+  // After expiry, edit's read-before-edit guard correctly forces a re-read.
+  const expireStaleReadTurns = (
+    report: ReturnType<ReturnType<typeof getContextHygieneTracker>["generateReport"]>,
+  ) => {
+    if (readTurns.size === 0) return;
+    for (const candidate of report.staleCandidates) {
+      if (!candidate.resourceKey.startsWith("file:")) continue;
+      const absolutePath = candidate.resourceKey.slice("file:".length);
+      const recordedEventId = readTurns.get(absolutePath);
+      if (recordedEventId === undefined) continue;
+      if (recordedEventId <= candidate.mutationEventId) {
+        readTurns.delete(absolutePath);
+      }
+    }
+  };
+
   pi.on("context", (event: any): any => {
     if (!Array.isArray(event.messages)) return undefined;
-    const messages = applyContextHygieneStaleContext(
-      event.messages,
-      getContextHygieneTracker().generateReport(),
-    );
+    const report = getContextHygieneTracker().generateReport();
+    const messages = applyContextHygieneStaleContext(event.messages, report);
+    expireStaleReadTurns(report);
     if (messages === event.messages) return undefined;
     return { messages };
   });
