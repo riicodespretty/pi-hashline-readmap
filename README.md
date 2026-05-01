@@ -7,50 +7,19 @@
 
 Upgrade pi's local coding workflow with hash-anchored reads and edits, structural file maps, symbol-aware navigation, structural search, agent-friendly file exploration, and compressed `bash` output.
 
-`pi-hashline-readmap` is a drop-in pi extension. It replaces the stock `read`, `edit`, `grep`, `ls`, and `find` tools, provides an enhanced `ast_search` tool, registers `write`, adds an optional `nu` tool for structured exploration via Nushell, and post-processes `bash` output so more context budget goes to signal instead of noise.
+`pi-hashline-readmap` is a drop-in [pi](https://github.com/mariozechner/pi-coding-agent) extension. It replaces the stock `read`, `edit`, `grep`, `ls`, and `find` tools, provides an enhanced `ast_search` tool, registers `write`, adds an optional `nu` tool for structured exploration via Nushell, and post-processes `bash` output so more context budget goes to signal instead of noise.
 
-## Why this exists
+It also reduces extension conflict risk by replacing several overlapping tool packages with one coordinated implementation.
 
-If you use pi for real code changes, the stock local-tool workflow has a few recurring failure modes:
+## Why use it?
 
-- search and read output is easy for a model to paraphrase incorrectly
-- follow-up edits can drift to the wrong line when the file changes
-- large files cost too many tokens to navigate
-- search results often need an extra read before they are useful
-- noisy test, build, Git, Docker, and package-manager output burns context
-- multiple extensions trying to own `read`, `grep`, or `edit` can create conflict
-
-This package consolidates those improvements into one extension instead of stacking overlapping packages.
-
-## Key features
-
-- Hash-anchored `read`, `grep`, and `ast_search` output plus hashlined `write` results for immediate follow-up edits
-- Hash-verified `edit` operations (`set_line`, `replace_lines`, `insert_after`, `replace`)
-- Structural maps and direct symbol reads for large or complex files
-- Symbol-scoped grep and local same-file support bundles for symbol reads
-- Agent-optimized `ls` and `find` tools for file exploration
-- Optional `nu` tool for structured exploration with Nushell
-- Route-aware `bash` compression for tests, builds, Git, Docker, linters, package managers, and more
-- Context-hygiene metadata for read/search/command/mutation outputs, plus an opt-in debug report tool
-
-## Quick Start
-
-### Install from npm
-
-```bash
-pi install npm:pi-hashline-readmap
-```
-
-Start a new pi session after installation. The extension registers its tools automatically for new sessions.
-
-### Install from a local clone
-
-```bash
-git clone https://github.com/coctostan/pi-hashline-readmap.git
-cd pi-hashline-readmap
-npm install
-pi install .
-```
+- Keep edits tied to stable `LINE:HASH` anchors instead of fragile line numbers.
+- Navigate large files with structural maps and direct symbol reads.
+- Turn search results into edit anchors without an extra read step.
+- Search code structurally with `ast_search` when text search is too brittle.
+- Explore files with agent-oriented `ls`, `find`, and optional `nu` tools.
+- Compress noisy test, build, Git, Docker, linter, package-manager, HTTP, transfer, and generic command output.
+- Use one extension instead of stacking overlapping `read`, `grep`, `edit`, and Bash-output packages.
 
 ## Installation
 
@@ -59,25 +28,19 @@ pi install .
 - [pi](https://github.com/mariozechner/pi-coding-agent) with extension support
 - Node.js **>= 20** for local development in this repository
 
-### Install methods
-
-#### 1. npm package
+### From npm
 
 ```bash
 pi install npm:pi-hashline-readmap
 ```
 
-Use this if you want the published package.
-
-#### 2. Git install
+### From GitHub
 
 ```bash
 pi install git:github.com/coctostan/pi-hashline-readmap
 ```
 
-Use this if you want to install directly from the repository.
-
-#### 3. Local workspace install
+### From a local checkout
 
 ```bash
 git clone https://github.com/coctostan/pi-hashline-readmap.git
@@ -86,38 +49,30 @@ npm install
 pi install .
 ```
 
-Use this when developing locally or testing unreleased changes.
+Start a new pi session after installation. Running sessions do not hot-reload extension code or tool registrations.
 
 ### Optional local tools
 
-These tools are not required for the package to load, but they unlock more capability or better output quality:
+These tools are not required for the extension to load, but they unlock more capability or better output quality:
 
 ```bash
-brew install nushell           # required for nu tool
+brew install nushell           # required for the nu tool
 brew install ast-grep          # required for ast_search
 brew install fd                # optional, speeds up find
 brew install difftastic        # optional, improves semantic edit summaries
 brew install shellcheck yq scc # optional, improves some bash-output compression paths
 ```
 
-## Usage
+## 30-second example
 
-After installation, open a new pi session. The extension wires in upgraded local tools automatically.
+The core workflow is: read a file, copy a `LINE:HASH` anchor, and edit against that verified anchor.
 
-### Read with stable `LINE:HASH` anchors
 ```text
 read({ path: "tests/fixtures/small.ts" })
-```
 
-Example output from this repository:
-
-```text
+# Example output:
 45:4bf|export function createDemoDirectory(): UserDirectory {
 ```
-
-The hash portion is currently a 3-character lowercase hex digest of the normalized line content.
-
-### Edit using the anchor you just read
 
 ```text
 edit({
@@ -133,162 +88,96 @@ edit({
 })
 ```
 
+Before writing, `edit` verifies that anchor against the current file contents. If the file changed, it reports a mismatch instead of silently editing the wrong line.
+
+## Common workflows
+
+### Safely edit a line
+
+Use `read` first, then pass the copied anchor to `edit`.
+
+```text
+read({ path: "src/example.ts" })
+edit({
+  path: "src/example.ts",
+  edits: [
+    { set_line: { anchor: "12:abc", new_text: "const enabled = true;" } }
+  ]
+})
+```
+
+`read`, `grep`, `ast_search`, and `write` all return hashlined output that can feed follow-up edits.
+
 ### Create a new file with `write`
 
 ```text
 write({ path: "src/new-module.ts", content: "export const demo = 1;\n" })
 ```
 
-`write` returns hashlined output you can feed straight into a follow-up `edit` call.
+`write` creates parent directories automatically and returns hashlined output for immediate refinement.
 
-### Read a symbol directly
+### Navigate a large file
 
 ```text
+read({ path: "src/hashline.ts", map: true })
 read({ path: "tests/fixtures/small.ts", symbol: "createDemoDirectory" })
 read({ path: "tests/fixtures/small.ts", symbol: "UserDirectory.addUser" })
 ```
 
-### Read a large file with a structural map
+Structural maps are appended automatically when large reads are truncated. The readmap supports 18 mapped language/file kinds, including TypeScript, JavaScript, Python, Rust, Go, Java, Swift, Shell, C/C++, Clojure, SQL, JSON/JSONL, Markdown, YAML, TOML, and CSV/TSV. Direct symbol reads can target functions, classes, methods, interfaces, type aliases, constants, and enums when the file type is supported.
 
-```text
-read({ path: "src/hashline.ts", map: true })
-```
-
-Use this when you need the shape of a file before choosing a symbol or line range.
-
-### Read a symbol with local same-file support
+### Read a symbol with local support
 
 ```text
 read({ path: "tests/fixtures/small.ts", symbol: "createDemoDirectory", bundle: "local" })
 ```
 
-### Search and edit directly with grep
+Use `bundle: "local"` when you want the requested symbol plus direct same-file local support.
+
+### Search and patch
 
 ```text
 grep({ pattern: "createDemoDirectory", path: "tests/fixtures", literal: true })
-```
-
-### Search within enclosing symbols
-
-```text
 grep({ pattern: "createDemoDirectory", path: "tests/fixtures", literal: true, scope: "symbol" })
 grep({ pattern: "createDemoDirectory", path: "tests/fixtures", literal: true, scope: "symbol", scopeContext: 3 })
 ```
-Use `scopeContext: 0` for only the matching lines inside the resolved symbol block.
 
-### Structural code search with `ast_search`
+`grep` returns anchored matches, supports literal and regex search, can summarize matches with `summary: true`, and can scope output to enclosing symbols. Use `scopeContext: 0` for only matching lines inside the resolved symbol block.
+
+### Search code structurally
 
 ```text
 ast_search({ pattern: "console.log($$$ARGS)", lang: "typescript", path: "src" })
 ```
 
-`ast_search` requires `ast-grep` installed locally.
+`ast_search` wraps local `ast-grep`, returns merged anchored match blocks grouped by file, and is best for syntax-shaped queries rather than raw text matching.
 
-### Explore files with `ls` and `find`
+### Explore files
 
 ```text
 ls({ path: "src" })
 find({ pattern: "*.ts", path: "src", maxDepth: 2 })
-```
-
-### Use Nushell for structured exploration
-
-```text
 nu({ command: "open package.json | get scripts" })
 ```
 
-When [Nushell](https://www.nushell.sh/) is installed, the extension registers `nu` for structured exploration and data inspection.
+`ls` shows one directory with directories first and dotfiles included. `find` performs recursive discovery, respects `.gitignore`, includes hidden files, and supports depth, regex, sort, mtime, and size filters. `nu` registers only when Nushell is installed and is useful for structured JSON, CSV, TOML, YAML, and filesystem inspection.
 
-### Bypass `bash` compression when you need raw output
+### Handle noisy command output
+
+The extension post-processes `bash` results to reduce noise while preserving useful output. Route-specific compression covers test runners, builds, compilers, Git, linters, Docker, package managers, HTTP clients, transfer tools, file-listing output, and oversized generic output.
+
+Use `PI_RTK_BYPASS=1` when route-specific compression hides something you need:
 
 ```bash
 PI_RTK_BYPASS=1 npm test
 PI_RTK_BYPASS=1 git log --stat
 ```
 
-Use the bypass when the filtered output hides information you need.
-
-### Bash context guard and recoverability
-
-Bash output is processed in layers:
-
-1. The extension first selects the best original/pre-RTK output source. When Pi provides a valid temporary `fullOutputPath`, that file is used for RTK compression. Otherwise the visible Bash text is used.
-2. Route-specific RTK compression may reduce noisy command output unless `PI_RTK_BYPASS=1` is set for that command invocation.
-3. The Bash context guard runs after RTK. When the final post-RTK text is still too large, the guard writes the full post-RTK output to a temporary file and replaces visible output with a recoverable head/tail preview.
-
-The guard is default-on. The shipped default-on policy supersedes the earlier opt-in proposal from the M9 design discussion. Set `PI_HASHLINE_BASH_CONTEXT_GUARD=0` to disable both the Bash context guard and the original-output restoration layer.
-
-`PI_RTK_BYPASS=1` only bypasses route-specific RTK compression. It does not disable the Bash context guard; large raw output can still be guarded unless `PI_HASHLINE_BASH_CONTEXT_GUARD=0` is also set.
-
-## Tool reference
-
-### `read`
-- returns `LINE:HASH|content` output
-- anchor examples currently look like `45:4bf|...` (3-character lowercase hex hashes)
-- supports targeted reads via `offset` and `limit`
-- appends a structural map automatically when a file is truncated
-- supports `map: true` for an explicit structural map
-- supports direct symbol lookup via `symbol`
-- supports `bundle: "local"` for same-file local support around a symbol read
-- supports structural maps across **18 mapped language/file kinds**
-- uses in-memory caching plus optional persistent caching across sessions for structural maps
-
-### `edit`
-- consumes anchors from `read`, `grep`, and `ast_search`
-- supports `set_line`, `replace_lines`, `insert_after`, and `replace`
-- verifies anchors before writing
-- reports mismatch diagnostics when the file changed since the read
-- adds semantic edit classification in structured output
-### `write`
-
-- creates parent directories automatically
-- returns hashlined output suitable for immediate follow-up `edit` calls
-- supports `map: true` to append a structural map to the visible output
-- warns and skips hashline generation for binary-looking content
-
-### `grep`
-- returns anchored matches ready for direct use with `edit`
-- supports literal or regex search
-- supports `summary: true` for per-file match counts
-- supports `scope: "symbol"` and `scopeContext` for symbol-local results
-- supports opt-in final visible output budgets with `PI_HASHLINE_GREP_MAX_LINES` and `PI_HASHLINE_GREP_MAX_BYTES`
-
-### `ast_search`
-- wraps `ast-grep` for structure-aware code search
-- returns merged, anchored match blocks grouped by file
-- is best for syntax-shaped queries rather than raw text matching
-- returns install guidance when the local `sg` binary is missing
-
-### `ls` and `find`
-- `ls` shows a single directory, dirs first, with dotfiles included
-- `find` performs recursive discovery, respects `.gitignore`, includes hidden files, and supports depth, regex, sort, mtime, and size filters
-
-### `nu`
-
-- registers only when Nushell is installed
-- useful for structured inspection of JSON, CSV, TOML, YAML, filesystem state, and other machine-readable data
-- supports pi-specific config lookup via `PI_NUSHELL_CONFIG`
-- points agents at optional plugins such as `gstat`, `query`, `formats`, `semver`, and `file`
-
-### `bash` output compression
-
-The extension post-processes `bash` tool results to reduce noise while preserving the useful parts. Specialized compressors currently cover:
-
-- test runners
-- build tools
-- compiler and bundler noise
-- Git output
-- linter output
-- Docker output
-- package manager output
-- HTTP client output
-- transfer tools
-- file-listing output
-- oversized generic output via smart truncation
+`PI_RTK_BYPASS=1` does not disable the Bash context guard; very large raw output can still be replaced with a recoverable preview unless `PI_HASHLINE_BASH_CONTEXT_GUARD=0` is also set. See [docs/bash-output.md](docs/bash-output.md) for the full layered behavior and recovery details.
 
 ## Configuration
 
-This package is configured with environment variables rather than a project-local config file.
+Most users do not need configuration. Use environment variables when you want to tighten visible grep output budgets, change where structural map caches are stored, disable persistent map caching, tune Bash output recovery, or enable context-hygiene debugging.
 
 | Variable | Purpose | Default / behavior |
 |---|---|---|
@@ -298,7 +187,7 @@ This package is configured with environment variables rather than a project-loca
 | `XDG_CACHE_HOME` | Base directory for the persistent map cache when no explicit cache dir is set | Cache lives under `$XDG_CACHE_HOME/pi-hashline-readmap/maps` |
 | `PI_HASHLINE_NO_PERSIST_MAPS=1` | Disable the on-disk structural-map cache | Keeps caching in-memory only |
 | `PI_NUSHELL_CONFIG` | Override the Nushell config path used by `nu` | Otherwise prefers `~/.config/pi/nushell/config.nu`, then `--no-config-file` |
-| `PI_RTK_BYPASS=1` | Disable route-specific `bash` compression for one command invocation | ANSI is still stripped; anti-pattern hints still apply |
+| `PI_RTK_BYPASS=1` | Disable route-specific `bash` compression for one command invocation | ANSI is still stripped; anti-pattern hints still apply; the Bash context guard can still trim oversized output |
 | `PI_HASHLINE_BASH_CONTEXT_GUARD=0` | Disable the Bash context guard and original-output restoration layer | Any value other than exact `0` leaves the default-on guard enabled |
 | `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES` | Tighten the post-RTK Bash guard line budget | Positive base-10 integer; invalid/unset values use `2000`; above-default values are clamped down |
 | `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES` | Tighten the post-RTK Bash guard byte budget | Positive base-10 integer interpreted as raw bytes; invalid/unset values use `51200`; above-default values are clamped down |
@@ -306,120 +195,23 @@ This package is configured with environment variables rather than a project-loca
 | `PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES` | Tighten the guarded preview tail size | Positive base-10 integer; invalid/unset values use `120`; above-default values are clamped down |
 | `PI_CONTEXT_HYGIENE_DEBUG=1` | Register the debug-only `context_hygiene_report` read-only tool | Disabled unless explicitly set to `1` |
 
-## Structured output (`details.ptcValue`)
+## Advanced documentation
 
-All tools provide machine-facing structured data alongside human-facing text output.
-
-### `read`
-
-Includes path, selected range, warnings, truncation info, symbol metadata, map status, and per-line anchors.
-
-### `grep`
-
-Includes total matches, per-record anchors, and additive symbol-scope metadata when `scope: "symbol"` is used.
-
-### `ast_search`
-
-Includes grouped match ranges and anchored lines.
-
-### `edit`
-
-Includes summary, diff, changed lines, warnings, no-op metadata, and semantic edit classification.
-
-### `ptcValue.error`
-
-When a tool fails, its result includes a structured `error` envelope inside `ptcValue` so downstream consumers can dispatch programmatically without parsing free text.
-
-```ts
-interface PtcError {
-  code: string;       // stable, kebab-case, drawn from src/ptc-error-codes.ts
-  message: string;    // matches (or is a clean superset of) content[0].text
-  hint?: string;      // concrete next-step recovery suggestion, when one exists
-  details?: unknown;  // tool-specific structured data
-}
-```
-
-```ts
-{
-  isError: true,
-  content: [{ type: "text", text: ... }],
-  details: {
-    ptcValue: {
-      tool: "<toolName>",
-      ok: false,
-      path?: string,
-      error: PtcError,
-    },
-  },
-}
-```
+- [docs/bash-output.md](https://github.com/coctostan/pi-hashline-readmap/blob/main/docs/bash-output.md) — Bash compression, original-output restoration, context-guard trimming, and bypass behavior.
+- [docs/structured-output.md](https://github.com/coctostan/pi-hashline-readmap/blob/main/docs/structured-output.md) — `details.ptcValue`, structured error envelopes, and the exported PTC policy contract.
+- [docs/context-hygiene.md](https://github.com/coctostan/pi-hashline-readmap/blob/main/docs/context-hygiene.md) — context-hygiene metadata, stale-context placeholders, and the debug report tool.
+- [docs/integrations.md](https://github.com/coctostan/pi-hashline-readmap/blob/main/docs/integrations.md) — EventBus/global executor exposure for downstream integrations.
+- [exploratory functional testing](https://github.com/coctostan/pi-hashline-readmap/blob/main/docs/exploratory-functional-testing.md) — exploratory testing notes.
+- [prompts/](prompts/) — tool prompt and schema documentation.
+- [CHANGELOG.md](CHANGELOG.md) — release history.
 
 ### PTC tool policy contract
 
-The package exports a machine-readable tool policy contract. The primary export is `HASHLINE_TOOL_PTC_POLICY`, and the package also exports `getHashlineToolPtcPolicy()`.
-
-```ts
-import { HASHLINE_TOOL_PTC_POLICY } from "pi-hashline-readmap";
-```
-
-Policy summary:
-- `read`, `grep`, `ls`, and `find` are safe-by-default and read-only
-- `ast_search` and `nu` are opt-in and read-only
-- `edit` is not safe-by-default and is mutating
-- `pi-prompt-assembler` may optionally consume this contract
-
-## Context hygiene metadata and stale context
-
-Tool results include additive `details.contextHygiene` metadata that classifies context as read, search, command output, or mutation context. This metadata is intended for downstream session/context-management integrations and does not change the visible current-turn tool output contract.
-
-When an `edit` or `write` mutates a file, older provider-context copies of `read`, `grep`, and `ast_search` results that touched the same `file:<path>` are marked stale before the next model call. Stale context is not deleted for token savings and is not treated as retired context; it is deterministic warning context that says the previous result is no longer trustworthy because file content changed after it was produced.
-
-What becomes stale:
-
-- earlier `read` results for the same mutated file
-- earlier `grep` results that touched the same mutated file
-- earlier `ast_search` results that touched the same mutated file
-- multi-file search artifacts when any touched file is later mutated; the stale record names the mutated `file:<path>` key that caused the stale status
-
-What does not become stale in Phase 1:
-
-- the latest `edit` or `write` mutation result
-- fresh `read`, `grep`, or `ast_search` results recorded after the mutation
-- results for unrelated files
-- Bash output such as old `git status`, `git diff`, or test logs
-- pressure-based retirement candidates
-
-To recover stale detail, re-run the original tool indicated by the placeholder: `read` for stale file reads, `grep` for stale text search results, or `ast_search` for stale structural search results. The current stale placeholders are deterministic:
-
-```text
-[Stale read context: file content changed after this result. Re-run read to refresh.]
-[Stale grep context: matched file content changed after this result. Re-run grep to refresh.]
-[Stale ast_search context: matched file content changed after this result. Re-run ast_search to refresh.]
-```
-
-When `PI_CONTEXT_HYGIENE_DEBUG=1` is set before starting pi, the extension also registers `context_hygiene_report`, a debug-only read-only tool that reports tracked context-hygiene resources, stale candidates, and retirement candidates without mutating tracker state.
+The package exports `HASHLINE_TOOL_PTC_POLICY` and `getHashlineToolPtcPolicy()` for integrations. In that contract, `read`, `grep`, `ls`, and `find` are safe-by-default and read-only; `ast_search` and `nu` are opt-in and read-only; `edit` is not safe-by-default and is mutating. `pi-prompt-assembler` may optionally consume this contract when deciding which helpers to expose.
 
 ## EventBus integration
 
-On load, the extension emits tool executor references for downstream consumers.
-
-The emitted/stashed executor surface always includes `read`, `edit`, `grep`, `ast_search`, `write`, `ls`, and `find`, plus `nu` when Nushell is available at runtime and `context_hygiene_report` when `PI_CONTEXT_HYGIENE_DEBUG=1`.
-
-```ts
-pi.events.emit("hashline:tool-executors", {
-  read,
-  edit,
-  grep,
-  ast_search,
-  write,
-  ls,
-  find,
-  ...(nu ? { nu } : {}),
-  ...(contextHygieneDebugTool ? { context_hygiene_report: contextHygieneDebugTool } : {}),
-});
-```
-
-The same executors are also exposed at `globalThis.__hashlineToolExecutors`.
+On extension load, the executor map is emitted with `pi.events.emit("hashline:tool-executors", toolExecutors)` and also assigned to `globalThis.__hashlineToolExecutors`. The core executor surface includes `read`, `edit`, `grep`, `ast_search`, `write`, `ls`, and `find`, plus `nu` when Nushell is available at runtime.
 
 ## Project Structure
 
@@ -438,19 +230,19 @@ src/
   rtk/                    # bash output compression pipeline
 prompts/                  # tool prompt/schema docs
 tests/                    # Vitest suite
-docs/                     # project notes and testing docs
+docs/                     # project notes and reference docs
 scripts/                  # helper scripts used by readmap internals
 ```
 
 ## Development
 
-### Install dependencies
+Install dependencies:
 
 ```bash
 npm install
 ```
 
-### Validate the workspace
+Validate the workspace:
 
 ```bash
 npm test
@@ -463,19 +255,11 @@ Release candidates should also pass an npm package dry run:
 npm pack --dry-run
 ```
 
-Before publishing or opening a PR, run the workspace checks above from a clean checkout and add any focused tests needed for the specific files or tools you changed.
-
-### Local development notes
+Before publishing or opening a PR, run the workspace checks above from a clean checkout.
 
 This repository is intended to be used as a pi extension workspace. New agent sessions pick up local extension edits from the checkout, but running sessions do not hot-reload the module graph. Restart the agent session after changing extension code.
 
 For project-specific development workflow details, see [AGENTS.md](https://github.com/coctostan/pi-hashline-readmap/blob/main/AGENTS.md).
-
-## Documentation
-
-- [CHANGELOG.md](CHANGELOG.md)
-- [docs/exploratory-functional-testing.md](https://github.com/coctostan/pi-hashline-readmap/blob/main/docs/exploratory-functional-testing.md)
-- [prompts/](prompts/)
 
 ## Contributing
 
