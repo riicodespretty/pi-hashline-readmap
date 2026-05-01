@@ -16,10 +16,12 @@ import { buildBashCommandState } from "./src/bash-command-state.js";
 import {
   buildCommandResource,
   buildContextHygieneMetadata,
+  buildFileResource,
   getContextHygieneTracker,
   registerContextHygieneDebugTool,
   resetContextHygieneTracker,
   type ContextHygieneMetadata,
+  type ContextHygieneResource,
 } from "./src/context-hygiene.js";
 import {
   consumeDoomLoopWarning,
@@ -267,14 +269,19 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
     const commandState = command
       ? buildBashCommandState({
           command,
+          cwd: process.cwd(),
           isError: event.isError === true,
           text: originalSelection.inputForRtk || originalText,
         })
       : undefined;
+    const contextHygieneResources: ContextHygieneResource[] = command ? [buildCommandResource(command)] : [];
+    for (const fileTarget of commandState?.fileTargets ?? []) {
+      contextHygieneResources.push(buildFileResource(fileTarget));
+    }
     const contextHygiene = buildContextHygieneMetadata({
       tool: "bash",
-      classification: "command-output",
-      resources: command ? [buildCommandResource(command)] : [],
+      classification: commandState?.stateKind === "shell-file-mutation" ? "mutation" : "command-output",
+      resources: contextHygieneResources,
       commandState,
     });
     recordContextHygiene(contextHygiene, event.toolCallId);

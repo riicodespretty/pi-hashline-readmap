@@ -84,6 +84,95 @@ describe("bash contextHygiene metadata", () => {
     expect(commandRerun?.eventIds).toHaveLength(2);
   });
 
+  it("records shell redirection file targets so prior reads can become stale", async () => {
+    const handlers = createHarness();
+    const targetPath = `${process.cwd()}/tmp/context-hygiene-bash-shell-target.txt`;
+    const fileResource = buildFileResource(targetPath);
+
+    await handlers.tool_result(
+      {
+        type: "tool_result" as const,
+        toolName: "read",
+        toolCallId: "read-before-shell-mutation",
+        input: { path: targetPath },
+        content: [{ type: "text" as const, text: "old content" }],
+        isError: false,
+        details: {
+          contextHygiene: buildContextHygieneMetadata({
+            tool: "read",
+            classification: "read-context",
+            resources: [fileResource],
+          }),
+        },
+      },
+      {},
+    );
+
+    const command = `printf changed > ${targetPath}`;
+    const result = await handlers.tool_result(
+      {
+        type: "tool_result" as const,
+        toolName: "bash",
+        toolCallId: "bash-shell-redirection",
+        input: { command },
+        content: [{ type: "text" as const, text: "" }],
+        isError: false,
+      },
+      {},
+    );
+
+    expect(result.details.contextHygiene.resources).toEqual(expect.arrayContaining([fileResource]));
+    expect(result.details.contextHygiene).toMatchObject({
+      tool: "bash",
+      classification: "mutation",
+      commandState: {
+        stateKind: "shell-file-mutation",
+        routineRetirementEligible: false,
+        protectedFromRoutineRetirement: true,
+        fileTargets: [targetPath],
+      },
+    });
+
+    const report = getContextHygieneTracker().generateReport();
+    expect(report.staleCandidates.flatMap((candidate) => candidate.staleResults)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          originalTool: "read",
+          originalResultId: "read-before-shell-mutation",
+          invalidatingMutationResultId: "bash-shell-redirection",
+          reason: "mutation-after-read",
+        }),
+      ]),
+    );
+  });
+
+
+  it("leaves unsafe shell expansion commands as command-only bash output", async () => {
+    const handlers = createHarness();
+    const command = "printf changed > $OUT_FILE";
+    const result = await handlers.tool_result(
+      {
+        type: "tool_result" as const,
+        toolName: "bash",
+        toolCallId: "bash-unsafe-expansion",
+        input: { command },
+        content: [{ type: "text" as const, text: "" }],
+        isError: false,
+      },
+      {},
+    );
+
+    expect(result.details.contextHygiene.classification).toBe("command-output");
+    expect(result.details.contextHygiene).toMatchObject({
+      tool: "bash",
+      resources: [buildCommandResource(command)],
+      commandState: {
+        normalizedCommand: command,
+        stateKind: "debug",
+      },
+    });
+  });
+
   it("records contextHygiene metadata from non-bash tool_result events without changing the event", async () => {
     const handlers = createHarness();
     const metadata = buildContextHygieneMetadata({
