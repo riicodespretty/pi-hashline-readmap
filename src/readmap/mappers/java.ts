@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import type { FileMap, FileSymbol } from "../types.js";
 import { DetailLevel, SymbolKind } from "../enums.js";
 
-export const MAPPER_VERSION = 1;
+export const MAPPER_VERSION = 2;
 
 type SyntaxNode = import("tree-sitter").SyntaxNode;
 
@@ -31,6 +31,7 @@ const MEMBER_METHOD_TYPES = new Set([
   "method_declaration",
   "constructor_declaration",
   "compact_constructor_declaration",
+  "annotation_type_element_declaration",
 ]);
 
 let parser: import("tree-sitter") | null = null;
@@ -186,7 +187,11 @@ function extractSymbols(root: SyntaxNode, source: string): FileSymbol[] {
 
     if (node.type === "enum_constant") {
       const name = extractName(node, source);
-      if (name) (parent ? (parent.children ??= []) : rootSymbols).push(buildSymbol(node, source, name, SymbolKind.Constant));
+      if (!name) return;
+      const symbol = buildSymbol(node, source, name, SymbolKind.Constant);
+      (parent ? (parent.children ??= []) : rootSymbols).push(symbol);
+      const body = node.childForFieldName("body");
+      for (const child of body?.namedChildren ?? []) visit(child, symbol);
       return;
     }
 
