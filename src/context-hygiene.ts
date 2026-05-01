@@ -306,6 +306,16 @@ export function buildAstSearchRehydrateDescriptor(
   return { tool: "ast_search", input: descriptorInput };
 }
 
+export interface ContextHygieneAppliedEffectsBucket {
+  count: number;
+  resultIds: string[];
+  reasons: string[];
+}
+
+export interface ContextHygieneAppliedEffects {
+  retired: ContextHygieneAppliedEffectsBucket;
+  stale: ContextHygieneAppliedEffectsBucket;
+}
 export interface ContextHygieneMetadata {
   schemaVersion: typeof CONTEXT_HYGIENE_SCHEMA_VERSION;
   tool: string;
@@ -313,6 +323,7 @@ export interface ContextHygieneMetadata {
   resources: ContextHygieneResource[];
   rehydrate?: ContextHygieneRehydrateDescriptor;
   commandState?: BashCommandState;
+  appliedEffects?: ContextHygieneAppliedEffects;
 }
 
 export interface BuildContextHygieneMetadataInput {

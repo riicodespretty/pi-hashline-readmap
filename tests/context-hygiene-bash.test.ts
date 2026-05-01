@@ -69,7 +69,21 @@ describe("bash contextHygiene metadata", () => {
     expect(first.details.contextHygiene).toEqual(expectedContextHygiene);
     expect((first.details.ptcValue as any)?.contextHygiene).toBeUndefined();
 
-    expect(second.details.contextHygiene).toEqual(expectedContextHygiene);
+    expect(second.content).toEqual([{ type: "text", text: "PASS" }]);
+
+    expect(second.details.contextHygiene).toMatchObject(expectedContextHygiene);
+    expect((second.details.contextHygiene as any).appliedEffects).toEqual({
+      retired: {
+        count: 1,
+        resultIds: ["bash-hygiene-1"],
+        reasons: ["same-command-success-rerun"],
+      },
+      stale: {
+        count: 0,
+        resultIds: [],
+        reasons: [],
+      },
+    });
 
     const commandRerun = getContextHygieneTracker()
       .generateReport()
@@ -82,6 +96,121 @@ describe("bash contextHygiene metadata", () => {
       resultIds: ["bash-hygiene-1", "bash-hygiene-2"],
     });
     expect(commandRerun?.eventIds).toHaveLength(2);
+  });
+
+  it("reports repo-state bash output staled by a later bash mutation in the current turn", async () => {
+    const handlers = createHarness();
+    const status = await handlers.tool_result(
+      {
+        type: "tool_result" as const,
+        toolName: "bash",
+        toolCallId: "status-before-mutation",
+        input: { command: "git status --short" },
+        content: [{ type: "text" as const, text: " M src/example.ts" }],
+        isError: false,
+      },
+      {},
+    );
+    const mutation = await handlers.tool_result(
+      {
+        type: "tool_result" as const,
+        toolName: "bash",
+        toolCallId: "bash-file-mutation-after-status",
+        input: { command: "printf changed > tmp/context-hygiene-current-turn.txt" },
+        content: [{ type: "text" as const, text: "" }],
+        isError: false,
+      },
+      {},
+    );
+
+    expect(status.details.contextHygiene.commandState.stateKind).toBe("repo-status");
+    expect(mutation.details.contextHygiene.commandState.stateKind).toBe("shell-file-mutation");
+    expect(mutation.content).toEqual([{ type: "text", text: "" }]);
+    expect((mutation.details.contextHygiene as any).appliedEffects).toEqual({
+      retired: {
+        count: 0,
+        resultIds: [],
+        reasons: [],
+      },
+      stale: {
+        count: 1,
+        resultIds: ["status-before-mutation"],
+        reasons: ["bash-repo-state-after-mutation"],
+      },
+    });
+
+    const report = getContextHygieneTracker().generateReport();
+    expect(report.staleCandidates.flatMap((candidate) => candidate.staleResults)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          originalTool: "bash",
+          originalResultId: "status-before-mutation",
+          invalidatingMutationResultId: "bash-file-mutation-after-status",
+          reason: "bash-repo-state-after-mutation",
+        }),
+      ]),
+    );
+  });
+
+  it("reports failed verification output staled by an exact successful rerun in the current turn", async () => {
+    const handlers = createHarness();
+    const command = "npm test -- --context-hygiene-current-turn";
+    const failure = await handlers.tool_result(
+      {
+        type: "tool_result" as const,
+        toolName: "bash",
+        toolCallId: "verification-failure-before-success",
+        input: { command },
+        content: [{ type: "text" as const, text: "FAIL tests/current-turn.test.ts" }],
+        isError: true,
+      },
+      {},
+    );
+    const success = await handlers.tool_result(
+      {
+        type: "tool_result" as const,
+        toolName: "bash",
+        toolCallId: "verification-success-after-failure",
+        input: { command },
+        content: [{ type: "text" as const, text: "PASS tests/current-turn.test.ts" }],
+        isError: false,
+      },
+      {},
+    );
+
+    expect(failure.details.contextHygiene.commandState).toMatchObject({
+      stateKind: "verification",
+      outcome: "failure",
+    });
+    expect(success.details.contextHygiene.commandState).toMatchObject({
+      stateKind: "verification",
+      outcome: "success",
+    });
+    expect(success.content).toEqual([{ type: "text", text: "PASS tests/current-turn.test.ts" }]);
+    expect((success.details.contextHygiene as any).appliedEffects).toEqual({
+      retired: {
+        count: 0,
+        resultIds: [],
+        reasons: [],
+      },
+      stale: {
+        count: 1,
+        resultIds: ["verification-failure-before-success"],
+        reasons: ["bash-verification-success-rerun"],
+      },
+    });
+
+    const report = getContextHygieneTracker().generateReport();
+    expect(report.staleCandidates.flatMap((candidate) => candidate.staleResults)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          originalTool: "bash",
+          originalResultId: "verification-failure-before-success",
+          invalidatingMutationResultId: "verification-success-after-failure",
+          reason: "bash-verification-success-rerun",
+        }),
+      ]),
+    );
   });
 
   it("records shell redirection file targets so prior reads can become stale", async () => {

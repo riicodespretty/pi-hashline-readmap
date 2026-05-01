@@ -20,6 +20,8 @@ import {
   getContextHygieneTracker,
   registerContextHygieneDebugTool,
   resetContextHygieneTracker,
+  type ContextHygieneAppliedEffects,
+  type ContextHygieneEvent,
   type ContextHygieneMetadata,
   type ContextHygieneResource,
 } from "./src/context-hygiene.js";
@@ -71,10 +73,57 @@ function contextHygieneFromDetails(details: unknown): ContextHygieneMetadata | u
   return isContextHygieneMetadata(metadata) ? metadata : undefined;
 }
 
-function recordContextHygiene(metadata: ContextHygieneMetadata, toolCallId: unknown): void {
-  getContextHygieneTracker().record(metadata, {
+function recordContextHygiene(metadata: ContextHygieneMetadata, toolCallId: unknown): ContextHygieneEvent {
+  return getContextHygieneTracker().record(metadata, {
     resultId: typeof toolCallId === "string" ? toolCallId : undefined,
   });
+}
+
+function buildAppliedEffectsBucket(resultIds: Set<string>, reasons: Set<string>) {
+  return {
+    count: resultIds.size,
+    resultIds: [...resultIds].sort(),
+    reasons: [...reasons].sort(),
+  };
+}
+
+const BASH_CURRENT_TURN_STALE_REASONS = new Set([
+  "bash-repo-state-after-mutation",
+  "bash-verification-success-rerun",
+]);
+function summarizeBashAppliedEffects(eventId: number): ContextHygieneAppliedEffects {
+  const report = getContextHygieneTracker().generateReport();
+  const retiredResultIds = new Set<string>();
+  const retiredReasons = new Set<string>();
+  const staleResultIds = new Set<string>();
+  const staleReasons = new Set<string>();
+
+  for (const candidate of report.retirementCandidates) {
+    if (candidate.supersededByEventId !== eventId) continue;
+    for (const record of candidate.retiredResults ?? []) {
+      if (record.originalTool !== "bash" || !record.originalResultId) continue;
+      retiredResultIds.add(record.originalResultId);
+      retiredReasons.add(record.reason);
+    }
+  }
+
+  for (const candidate of report.staleCandidates) {
+    if (candidate.mutationEventId !== eventId || !BASH_CURRENT_TURN_STALE_REASONS.has(candidate.reason)) continue;
+    for (const record of candidate.staleResults) {
+      if (record.originalTool !== "bash" || !record.originalResultId) continue;
+      staleResultIds.add(record.originalResultId);
+      staleReasons.add(record.reason);
+    }
+  }
+
+  return {
+    retired: buildAppliedEffectsBucket(retiredResultIds, retiredReasons),
+    stale: buildAppliedEffectsBucket(staleResultIds, staleReasons),
+  };
+}
+
+function hasAppliedEffects(effects: ContextHygieneAppliedEffects): boolean {
+  return effects.retired.count > 0 || effects.stale.count > 0;
 }
 
 export {
@@ -284,7 +333,11 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
       resources: contextHygieneResources,
       commandState,
     });
-    recordContextHygiene(contextHygiene, event.toolCallId);
+    const recordedContextHygieneEvent = recordContextHygiene(contextHygiene, event.toolCallId);
+    const appliedEffects = summarizeBashAppliedEffects(recordedContextHygieneEvent.id);
+    const contextHygieneForDetails: ContextHygieneMetadata = hasAppliedEffects(appliedEffects)
+      ? { ...contextHygiene, appliedEffects }
+      : contextHygiene;
     const applyWarning = (body: string): string => {
       if (!doomLoop) return body;
       const prefix = `${formatDoomLoopMessage(doomLoop)}\n\n---\n`;
@@ -312,7 +365,7 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
         content: [{ type: "text" as const, text: guarded.text }, ...nonTextContent],
         details: {
           ...existingDetails,
-          contextHygiene,
+          contextHygiene: contextHygieneForDetails,
           bashContextGuard: guarded.metadata,
           ...(bashOriginalOutput ? { bashOriginalOutput } : {}),
         },
@@ -344,7 +397,7 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
       details: {
         ...existingDetails,
         compressionInfo: info,
-        contextHygiene,
+        contextHygiene: contextHygieneForDetails,
         bashContextGuard: guarded.metadata,
         ...(bashOriginalOutput ? { bashOriginalOutput } : {}),
       },

@@ -183,7 +183,7 @@ function renderPreview(options: {
     rendered.push(`Original/pre-RTK: ${options.originalMetadata.originalLineCount} lines, ${options.originalMetadata.originalByteCount} bytes`);
   }
   rendered.push(`Post-RTK: ${options.metadata.postRtkLineCount} lines, ${options.metadata.postRtkByteCount} bytes`);
-  rendered.push(`Limits: ${options.metadata.maxLines} lines, ${options.metadata.maxBytes} bytes`);
+  rendered.push(`Trigger thresholds: ${options.metadata.maxLines} lines, ${options.metadata.maxBytes} bytes`);
   if (command) rendered.push(`Command: ${command}`);
   if (preservedNotices.length > 0) rendered.push("", "Preserved notices:", ...preservedNotices);
   rendered.push("", "Head:", ...head);

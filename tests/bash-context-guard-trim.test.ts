@@ -44,7 +44,8 @@ describe("applyBashContextGuard trimming", () => {
     expect(result.text).toContain("Original/pre-RTK output: /tmp/original-output.txt");
     expect(result.text).toContain("Original/pre-RTK: 10 lines, 300 bytes");
     expect(result.text).toContain(`Post-RTK: 6 lines, ${Buffer.byteLength(text, "utf8")} bytes`);
-    expect(result.text).toContain("Limits: 5 lines, 1024 bytes");
+    expect(result.text).toContain("Trigger thresholds: 5 lines, 1024 bytes");
+    expect(result.text).not.toContain("Limits: 5 lines, 1024 bytes");
     expect(result.text).toContain("Command: npm test -- --runInBand");
     expect(result.text).toContain("Head:");
     expect(result.text).toContain("line-1\nline-2");
