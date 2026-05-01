@@ -195,6 +195,74 @@ Most users do not need configuration. Use environment variables when you want to
 | `PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES` | Tighten the guarded preview tail size | Positive base-10 integer; invalid/unset values use `120`; above-default values are clamped down |
 | `PI_CONTEXT_HYGIENE_DEBUG=1` | Register the debug-only `context_hygiene_report` read-only tool | Disabled unless explicitly set to `1` |
 
+## Hashline settings JSON
+
+`pi-hashline-readmap` can read durable configuration from Pi settings JSON files. Environment variables are still supported and are not deprecated.
+
+Locations, in increasing precedence:
+
+1. Built-in defaults
+2. Global settings: `~/.pi/agent/settings.json`
+3. Project settings: `<repo>/.pi/settings.json`
+4. Supported `process.env` variables
+
+All Hashline settings must live under the top-level `hashlineReadmap` namespace so they do not conflict with Pi core settings.
+
+```json
+{
+  "hashlineReadmap": {
+    "grep": {
+      "maxLines": 2000,
+      "maxBytes": 51200
+    },
+    "mapCache": {
+      "dir": "/tmp/pi-hashline-readmap/maps",
+      "enabled": true
+    },
+    "bashContextGuard": {
+      "enabled": true,
+      "maxLines": 2000,
+      "maxBytes": 51200,
+      "headLines": 80,
+      "tailLines": 120
+    }
+  }
+}
+```
+
+Supported fields:
+
+| JSON field | Type | Env override | Default / ceiling |
+|---|---:|---|---:|
+| `hashlineReadmap.grep.maxLines` | positive integer | `PI_HASHLINE_GREP_MAX_LINES` | pi `DEFAULT_MAX_LINES` |
+| `hashlineReadmap.grep.maxBytes` | positive integer | `PI_HASHLINE_GREP_MAX_BYTES` | `51200` |
+| `hashlineReadmap.mapCache.dir` | non-empty string | `PI_HASHLINE_MAP_CACHE_DIR` | `$XDG_CACHE_HOME/pi-hashline-readmap/maps`, else `~/.cache/pi-hashline-readmap/maps` |
+| `hashlineReadmap.mapCache.enabled` | boolean | `PI_HASHLINE_NO_PERSIST_MAPS=1` disables | `true` |
+| `hashlineReadmap.bashContextGuard.enabled` | boolean | `PI_HASHLINE_BASH_CONTEXT_GUARD=0` disables | `true` |
+| `hashlineReadmap.bashContextGuard.maxLines` | positive integer | `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES` | `2000` |
+| `hashlineReadmap.bashContextGuard.maxBytes` | positive integer | `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES` | `51200` |
+| `hashlineReadmap.bashContextGuard.headLines` | positive integer | `PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES` | `80` |
+| `hashlineReadmap.bashContextGuard.tailLines` | positive integer | `PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES` | `120` |
+
+Integer budget fields are stricter-only: valid values can reduce visible output or guard limits, but values above the built-in ceilings clamp to the current ceilings. Invalid JSON, malformed JSON, and invalid field values are ignored with non-fatal warnings where possible.
+
+Migration example:
+
+```bash
+export PI_HASHLINE_GREP_MAX_LINES=250
+export PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES=16384
+```
+
+Equivalent project settings:
+
+```json
+{
+  "hashlineReadmap": {
+    "grep": { "maxLines": 250 },
+    "bashContextGuard": { "maxBytes": 16384 }
+  }
+}
+```
 ## Advanced documentation
 
 - [docs/bash-output.md](https://github.com/coctostan/pi-hashline-readmap/blob/main/docs/bash-output.md) — Bash compression, original-output restoration, context-guard trimming, and bypass behavior.

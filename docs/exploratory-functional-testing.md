@@ -66,7 +66,7 @@ Expected behavior:
 - supports `ignoreCase`, `context`, `limit`, and `summary`
 - supports `scope: "symbol"` to group results by enclosing mapped symbol when available
 - truncates large result sets with explicit indicators instead of failing silently
-- supports opt-in final visible output budgets through `PI_HASHLINE_GREP_MAX_LINES` and `PI_HASHLINE_GREP_MAX_BYTES`
+- supports opt-in final visible output budgets through `PI_HASHLINE_GREP_MAX_LINES` and `PI_HASHLINE_GREP_MAX_BYTES`, and through equivalent `hashlineReadmap.grep` JSON settings
 - handles problematic file content defensively enough to avoid misleading raw output where possible
 
 Practical expectation:
@@ -97,13 +97,34 @@ Expected behavior:
 - validates Pi-provided Bash `fullOutputPath` values before reading them and only restores from valid temporary full-output files
 - writes recoverable full post-RTK output when the Bash context guard trims final output
 - writes an original/pre-RTK snapshot when the guard trims and Pi did not provide a valid original full-output path
-- exposes stricter-only guard controls through `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES`, `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES`, `PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES`, and `PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES`
+- exposes stricter-only guard controls through `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES`, `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES`, `PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES`, and `PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES`, and through equivalent `hashlineReadmap.bashContextGuard` JSON settings
 - disables the guard/original-restoration layer only when `PI_HASHLINE_BASH_CONTEXT_GUARD=0`
 - keeps `PI_RTK_BYPASS=1` scoped to RTK compression; bypassed raw output is still eligible for context-guard trimming
 
 Practical expectation:
 
 - common local development commands should consume less context than raw terminal output
+
+### Settings JSON
+
+Expected behavior:
+
+- reads global Hashline settings from `~/.pi/agent/settings.json`
+- reads project Hashline settings from `<repo>/.pi/settings.json`
+- uses only the top-level `hashlineReadmap` namespace
+- resolves precedence as env overrides project JSON, project JSON overrides global JSON, and global JSON overrides built-in defaults
+- ignores malformed JSON and invalid supported field values without failing normal tool execution
+- keeps all existing environment variables working as overrides/fallbacks
+
+Manual spot checks:
+
+1. Put `hashlineReadmap.grep.maxLines` in `~/.pi/agent/settings.json`, start a new pi session, and confirm large `grep` output truncates earlier.
+2. Put a different `hashlineReadmap.grep.maxLines` in `<repo>/.pi/settings.json` and confirm the project value wins over the global value.
+3. Set `PI_HASHLINE_GREP_MAX_LINES` and confirm the env value wins over project JSON.
+4. Put malformed JSON in a temporary project settings file and confirm Hashline tools still run while falling back to env/default behavior.
+5. Put invalid field values such as `hashlineReadmap.bashContextGuard.maxLines: "10"` and confirm the invalid field is ignored with a non-fatal warning.
+6. Set `hashlineReadmap.mapCache.enabled: false`, then set `PI_HASHLINE_NO_PERSIST_MAPS=1`, and confirm both paths disable persistent map reads/writes without changing in-memory map generation.
+7. Set `hashlineReadmap.bashContextGuard.enabled: true`, then set `PI_HASHLINE_BASH_CONTEXT_GUARD=0`, and confirm the env disable wins exactly.
 
 ### Context hygiene metadata
 

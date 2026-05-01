@@ -3,10 +3,11 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { mkdir, rm, writeFile, unlink, readdir, utimes, stat as fsStat, readFile } from "node:fs/promises";
-import { resolveCacheDir, computeKey, contentHashFor64k, readCached, writeCachedRaw, writeCached, __setEvictionHooksForTest, __resetWriteCounter } from "../src/persistent-map-cache.js";
+import { resolveCacheDir, resolveMapCachePersistenceEnabled, computeKey, contentHashFor64k, readCached, writeCachedRaw, writeCached, __setEvictionHooksForTest, __resetWriteCounter } from "../src/persistent-map-cache.js";
 import * as persistentMapCacheModule from "../src/persistent-map-cache.js";
 import * as mapperModule from "../src/readmap/mapper.js";
 import { clearMapCache, getOrGenerateMap } from "../src/map-cache.js";
+import { __resetHashlineSettingsPathsForTest, __setHashlineSettingsPathsForTest } from "../src/hashline-settings.js";
 
 const SAVED = {
   dir: process.env.PI_HASHLINE_MAP_CACHE_DIR,
@@ -21,6 +22,24 @@ function restoreEnv(name: string, value: string | undefined): void {
   }
   process.env[name] = value;
 }
+
+const SETTINGS_ROOTS: string[] = [];
+
+beforeEach(() => {
+  const settingsRoot = join(tmpdir(), `pmc-settings-${randomBytes(6).toString("hex")}`);
+  SETTINGS_ROOTS.push(settingsRoot);
+  __setHashlineSettingsPathsForTest({
+    globalSettingsPath: join(settingsRoot, "missing-global-settings.json"),
+    projectSettingsPath: join(settingsRoot, "missing-project-settings.json"),
+  });
+});
+
+afterEach(async () => {
+  __resetHashlineSettingsPathsForTest();
+  for (const root of SETTINGS_ROOTS.splice(0)) {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 describe("resolveCacheDir", () => {
   beforeEach(() => {
@@ -47,6 +66,24 @@ describe("resolveCacheDir", () => {
 
   it("falls back to ~/.cache when neither env var set", () => {
     expect(resolveCacheDir()).toBe(join(homedir(), ".cache/pi-hashline-readmap/maps"));
+  });
+
+  it("uses JSON cache dir with env override precedence", async () => {
+    const root = join(tmpdir(), `pmc-json-dir-${randomBytes(6).toString("hex")}`);
+    SETTINGS_ROOTS.push(root);
+    const projectSettingsPath = join(root, "repo/.pi/settings.json");
+    const globalSettingsPath = join(root, "home/.pi/agent/settings.json");
+    await mkdir(join(root, "repo/.pi"), { recursive: true });
+    await mkdir(join(root, "home/.pi/agent"), { recursive: true });
+    await writeFile(globalSettingsPath, JSON.stringify({ hashlineReadmap: { mapCache: { dir: "/global-cache" } } }));
+    await writeFile(projectSettingsPath, JSON.stringify({ hashlineReadmap: { mapCache: { dir: "/project-cache" } } }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath, projectSettingsPath });
+
+    expect(resolveCacheDir()).toBe("/project-cache");
+    process.env.PI_HASHLINE_MAP_CACHE_DIR = "/env-cache";
+    expect(resolveCacheDir()).toBe("/env-cache");
+    process.env.PI_HASHLINE_MAP_CACHE_DIR = "";
+    expect(resolveCacheDir()).toBe("/project-cache");
   });
 });
 
@@ -508,6 +545,60 @@ describe("getOrGenerateMap — opt-out env var", () => {
   });
 });
 
+describe("getOrGenerateMap — JSON persistence opt-out", () => {
+  const dir = join(tmpdir(), `pmc-json-off-${randomBytes(6).toString("hex")}`);
+  const settingsRoot = join(tmpdir(), `pmc-json-settings-${randomBytes(6).toString("hex")}`);
+  const projectSettingsPath = join(settingsRoot, "repo/.pi/settings.json");
+  const globalSettingsPath = join(settingsRoot, "missing-global-settings.json");
+  const tmpFiles: string[] = [];
+
+  beforeEach(async () => {
+    delete process.env.PI_HASHLINE_NO_PERSIST_MAPS;
+    delete process.env.PI_HASHLINE_MAP_CACHE_DIR;
+    await mkdir(dir, { recursive: true });
+    await mkdir(join(settingsRoot, "repo/.pi"), { recursive: true });
+    await writeFile(projectSettingsPath, JSON.stringify({ hashlineReadmap: { mapCache: { dir, enabled: false } } }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath, projectSettingsPath });
+    clearMapCache();
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    __resetHashlineSettingsPathsForTest();
+    for (const p of tmpFiles.splice(0)) {
+      try { await unlink(p); } catch {}
+    }
+    await rm(dir, { recursive: true, force: true });
+    await rm(settingsRoot, { recursive: true, force: true });
+    delete process.env.PI_HASHLINE_MAP_CACHE_DIR;
+    process.env.PI_HASHLINE_NO_PERSIST_MAPS = "1";
+  });
+
+  it("skips persistent reads and writes when JSON disables map cache", async () => {
+    const srcPath = join(tmpdir(), `pmc-json-off-src-${randomBytes(6).toString("hex")}.ts`);
+    tmpFiles.push(srcPath);
+    await writeFile(srcPath, "export const jsonOff = 1;\n");
+
+    const readCachedSpy = vi.spyOn(persistentMapCacheModule, "readCached");
+    const writeCachedSpy = vi.spyOn(persistentMapCacheModule, "writeCached");
+
+    await expect(getOrGenerateMap(srcPath)).resolves.not.toBeNull();
+    expect(readCachedSpy).not.toHaveBeenCalled();
+    expect(writeCachedSpy).not.toHaveBeenCalled();
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  it("lets PI_HASHLINE_NO_PERSIST_MAPS=1 disable persistence even when JSON enables it", async () => {
+    await writeFile(projectSettingsPath, JSON.stringify({
+      hashlineReadmap: { mapCache: { dir, enabled: true } },
+    }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath, projectSettingsPath });
+    process.env.PI_HASHLINE_NO_PERSIST_MAPS = "1";
+
+    expect(resolveMapCachePersistenceEnabled()).toBe(false);
+    expect(await readCached("any-key")).toBeNull();
+  });
+});
 describe("MAPPER_VERSION bump invalidates cache", () => {
   const dir = join(tmpdir(), `pmc-ver-${randomBytes(6).toString("hex")}`);
   const tmpFiles: string[] = [];
