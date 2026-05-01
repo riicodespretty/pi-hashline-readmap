@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@mariozechner/pi-coding-agent";
 import { resolveGrepOutputBudget, parsePositiveBase10Int } from "../src/grep-budget.js";
+import { __resetHashlineSettingsPathsForTest, __setHashlineSettingsPathsForTest } from "../src/hashline-settings.js";
 
 const LINES_DEFAULT = DEFAULT_MAX_LINES; // 2000
 const BYTES_DEFAULT = Math.min(DEFAULT_MAX_BYTES, 50 * 1024); // 51200
+const SETTINGS_ROOTS: string[] = [];
 
 describe("parsePositiveBase10Int", () => {
 	it("accepts plain positive base-10 integer strings", () => {
@@ -46,11 +51,19 @@ describe("resolveGrepOutputBudget", () => {
 	};
 
 	beforeEach(() => {
+		const settingsRoot = mkdtempSync(join(tmpdir(), "grep-budget-settings-"));
+		SETTINGS_ROOTS.push(settingsRoot);
+		__setHashlineSettingsPathsForTest({
+			globalSettingsPath: join(settingsRoot, "missing-global-settings.json"),
+			projectSettingsPath: join(settingsRoot, "missing-project-settings.json"),
+		});
 		delete process.env.PI_HASHLINE_GREP_MAX_LINES;
 		delete process.env.PI_HASHLINE_GREP_MAX_BYTES;
 	});
 
 	afterEach(() => {
+		__resetHashlineSettingsPathsForTest();
+		for (const root of SETTINGS_ROOTS.splice(0)) rmSync(root, { recursive: true, force: true });
 		if (SAVED.lines === undefined) delete process.env.PI_HASHLINE_GREP_MAX_LINES;
 		else process.env.PI_HASHLINE_GREP_MAX_LINES = SAVED.lines;
 		if (SAVED.bytes === undefined) delete process.env.PI_HASHLINE_GREP_MAX_BYTES;
@@ -125,5 +138,22 @@ describe("resolveGrepOutputBudget", () => {
 			maxLines: LINES_DEFAULT,
 			maxBytes: BYTES_DEFAULT,
 		});
+	});
+	it("uses JSON grep budgets with env override precedence", () => {
+		const root = mkdtempSync(join(tmpdir(), "grep-json-budget-"));
+		SETTINGS_ROOTS.push(root);
+		const globalSettingsPath = join(root, "home/.pi/agent/settings.json");
+		const projectSettingsPath = join(root, "repo/.pi/settings.json");
+		mkdirSync(join(root, "home/.pi/agent"), { recursive: true });
+		mkdirSync(join(root, "repo/.pi"), { recursive: true });
+		writeFileSync(globalSettingsPath, JSON.stringify({ hashlineReadmap: { grep: { maxLines: 100, maxBytes: 4096 } } }), "utf8");
+		writeFileSync(projectSettingsPath, JSON.stringify({ hashlineReadmap: { grep: { maxBytes: 2048 } } }), "utf8");
+		__setHashlineSettingsPathsForTest({ globalSettingsPath, projectSettingsPath });
+
+		expect(resolveGrepOutputBudget()).toEqual({ maxLines: 100, maxBytes: 2048 });
+		process.env.PI_HASHLINE_GREP_MAX_LINES = "7";
+		expect(resolveGrepOutputBudget()).toEqual({ maxLines: 7, maxBytes: 2048 });
+		process.env.PI_HASHLINE_GREP_MAX_LINES = "99999";
+		expect(resolveGrepOutputBudget().maxLines).toBe(LINES_DEFAULT);
 	});
 });

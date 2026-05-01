@@ -6,6 +6,12 @@ import {
   BASH_CONTEXT_GUARD_DEFAULT_TAIL_LINES,
   resolveBashContextGuardConfig,
 } from "../src/rtk/bash-context-guard.js";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { __resetHashlineSettingsPathsForTest, __setHashlineSettingsPathsForTest } from "../src/hashline-settings.js";
+
+const SETTINGS_ROOTS: string[] = [];
 
 describe("resolveBashContextGuardConfig", () => {
   const saved = {
@@ -17,6 +23,12 @@ describe("resolveBashContextGuardConfig", () => {
   };
 
   beforeEach(() => {
+    const settingsRoot = mkdtempSync(join(tmpdir(), "bash-guard-settings-"));
+    SETTINGS_ROOTS.push(settingsRoot);
+    __setHashlineSettingsPathsForTest({
+      globalSettingsPath: join(settingsRoot, "missing-global-settings.json"),
+      projectSettingsPath: join(settingsRoot, "missing-project-settings.json"),
+    });
     delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD;
     delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES;
     delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES;
@@ -25,6 +37,8 @@ describe("resolveBashContextGuardConfig", () => {
   });
 
   afterEach(() => {
+    __resetHashlineSettingsPathsForTest();
+    for (const root of SETTINGS_ROOTS.splice(0)) rmSync(root, { recursive: true, force: true });
     if (saved.enabled === undefined) delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD;
     else process.env.PI_HASHLINE_BASH_CONTEXT_GUARD = saved.enabled;
     if (saved.maxLines === undefined) delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES;
@@ -120,5 +134,46 @@ describe("resolveBashContextGuardConfig", () => {
     expect(resolveBashContextGuardConfig().maxLines).toBe(9);
     delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES;
     expect(resolveBashContextGuardConfig().maxLines).toBe(2000);
+  });
+
+  it("uses JSON guard settings with env disable and ceiling precedence", () => {
+    const root = mkdtempSync(join(tmpdir(), "bash-guard-json-"));
+    SETTINGS_ROOTS.push(root);
+    const projectSettingsPath = join(root, "repo/.pi/settings.json");
+    const globalSettingsPath = join(root, "missing-global-settings.json");
+    mkdirSync(join(root, "repo/.pi"), { recursive: true });
+    writeFileSync(projectSettingsPath, JSON.stringify({
+      hashlineReadmap: {
+        bashContextGuard: {
+          enabled: false,
+          maxLines: 25,
+          maxBytes: 1024,
+          headLines: 3,
+          tailLines: 7,
+        },
+      },
+    }), "utf8");
+    __setHashlineSettingsPathsForTest({ globalSettingsPath, projectSettingsPath });
+
+    expect(resolveBashContextGuardConfig()).toEqual({
+      enabled: false,
+      maxLines: 25,
+      maxBytes: 1024,
+      headLines: 3,
+      tailLines: 7,
+    });
+
+    writeFileSync(projectSettingsPath, JSON.stringify({
+      hashlineReadmap: { bashContextGuard: { enabled: true, maxLines: 25 } },
+    }), "utf8");
+    expect(resolveBashContextGuardConfig().enabled).toBe(true);
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD = "0";
+    expect(resolveBashContextGuardConfig().enabled).toBe(false);
+
+    delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD;
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES = "99999";
+    expect(resolveBashContextGuardConfig().maxLines).toBe(BASH_CONTEXT_GUARD_DEFAULT_MAX_LINES);
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES = "9";
+    expect(resolveBashContextGuardConfig().maxLines).toBe(9);
   });
 });

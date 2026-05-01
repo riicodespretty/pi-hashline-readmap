@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { open, readFile, writeFile as fsWriteFile, mkdir as fsMkdir, rename, readdir, stat, unlink } from "node:fs/promises";
 import xxhashWasm from "xxhash-wasm";
 import type { FileMap } from "./readmap/types.js";
+import { resolveHashlineJsonSettings } from "./hashline-settings.js";
 
 /**
  * Resolve the on-disk map-cache directory using env precedence:
@@ -11,9 +12,19 @@ import type { FileMap } from "./readmap/types.js";
  * 2. `$XDG_CACHE_HOME/pi-hashline-readmap/maps` (when non-empty).
  * 3. `~/.cache/pi-hashline-readmap/maps`.
  */
+function warnSettings(warnings: ReturnType<typeof resolveHashlineJsonSettings>["warnings"]): void {
+  for (const warning of warnings) {
+    console.warn(`[hashlineReadmap] ${warning.source}${warning.path ? ` ${warning.path}` : ""}: ${warning.message}`);
+  }
+}
+
 export function resolveCacheDir(): string {
   const explicit = process.env.PI_HASHLINE_MAP_CACHE_DIR;
   if (explicit && explicit.length > 0) return explicit;
+
+  const { settings, warnings } = resolveHashlineJsonSettings();
+  warnSettings(warnings);
+  if (settings.mapCache?.dir) return settings.mapCache.dir;
 
   const xdg = process.env.XDG_CACHE_HOME;
   if (xdg && xdg.length > 0) return join(xdg, "pi-hashline-readmap/maps");
@@ -21,8 +32,15 @@ export function resolveCacheDir(): string {
   return join(homedir(), ".cache/pi-hashline-readmap/maps");
 }
 
+export function resolveMapCachePersistenceEnabled(): boolean {
+  if (process.env.PI_HASHLINE_NO_PERSIST_MAPS === "1") return false;
+  const { settings, warnings } = resolveHashlineJsonSettings();
+  warnSettings(warnings);
+  return settings.mapCache?.enabled ?? true;
+}
+
 function persistenceEnabled(): boolean {
-  return process.env.PI_HASHLINE_NO_PERSIST_MAPS !== "1";
+  return resolveMapCachePersistenceEnabled();
 }
 
 /**
