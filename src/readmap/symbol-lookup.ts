@@ -88,12 +88,29 @@ function preferJavaTopLevelType(map: FileMap, candidates: SymbolCandidate[]): Sy
   return topLevelTypes.length === 1 ? topLevelTypes[0] : undefined;
 }
 
+function javaPackageName(map: FileMap): string | undefined {
+  if (map.language !== "Java") return undefined;
+  for (const entry of map.imports) {
+    const match = /^package\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*;?$/.exec(entry);
+    if (match) return match[1];
+  }
+  return undefined;
+}
+
+function stripJavaPackagePrefix(map: FileMap, query: string): string | undefined {
+  const packageName = javaPackageName(map);
+  if (!packageName) return undefined;
+  const prefix = `${packageName}.`;
+  return query.startsWith(prefix) ? query.slice(prefix.length) : undefined;
+}
+
 export function findSymbol(map: FileMap, query: string): SymbolLookupResult {
   const q = query.trim();
   if (!q) return { type: "not-found" };
   if (map.symbols.length === 0) return { type: "not-found" };
 
   const allSymbols = flattenSymbols(map.symbols);
+  const javaRelativeQuery = stripJavaPackagePrefix(map, q);
 
   if (q.includes("@")) {
     const parts = q.split("@");
@@ -114,6 +131,16 @@ export function findSymbol(map: FileMap, query: string): SymbolLookupResult {
     return { type: "ambiguous", candidates: toMatches(exact.slice(0, 5)) };
   }
 
+  if (javaRelativeQuery) {
+    const javaExact = allSymbols.filter((c) => c.symbol.name === javaRelativeQuery);
+    if (javaExact.length === 1) return { type: "found", symbol: toMatch(javaExact[0].symbol, javaExact[0].parentName) };
+    if (javaExact.length > 1) {
+      const preferred = preferJavaTopLevelType(map, javaExact);
+      if (preferred) return { type: "found", symbol: toMatch(preferred.symbol, preferred.parentName) };
+      return { type: "ambiguous", candidates: toMatches(javaExact.slice(0, 5)) };
+    }
+  }
+
   if (q.includes(".")) {
     const parts = q.split(".").map((p) => p.trim());
     if (parts.length >= 2 && parts.every((p) => p.length > 0)) {
@@ -126,6 +153,21 @@ export function findSymbol(map: FileMap, query: string): SymbolLookupResult {
           type: "ambiguous",
           candidates: toMatches(candidates.slice(0, 5)),
         };
+      }
+      const javaParts = javaRelativeQuery?.includes(".")
+        ? javaRelativeQuery.split(".").map((p) => p.trim())
+        : [];
+      if (javaParts.length >= 2 && javaParts.every((p) => p.length > 0)) {
+        const javaCandidates = resolveDotPath(map.symbols, javaParts);
+        if (javaCandidates.length === 1) {
+          return { type: "found", symbol: toMatch(javaCandidates[0].symbol, javaCandidates[0].parentName) };
+        }
+        if (javaCandidates.length > 1) {
+          return {
+            type: "ambiguous",
+            candidates: toMatches(javaCandidates.slice(0, 5)),
+          };
+        }
       }
     }
   }

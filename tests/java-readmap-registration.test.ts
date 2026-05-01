@@ -10,6 +10,7 @@ import { SymbolKind } from "../src/readmap/enums.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixture = resolve(__dirname, "fixtures/KafkaConsumerConfiguration.java");
+const qualifiedFixture = resolve(__dirname, "fixtures/QualifiedOuter.java");
 
 async function readTool(params: { path: string; symbol?: string; map?: boolean; bundle?: "local" }) {
   let capturedTool: any = null;
@@ -69,6 +70,23 @@ describe("Java readmap registration and workflow integration", () => {
     const methodRead = await readTool({ path: fixture, symbol: "KafkaConsumerConfiguration.consumerFactory" });
     expect(text(methodRead)).toMatch(/^\[Symbol: consumerFactory \(method\) in KafkaConsumerConfiguration, lines 13-16 of 2\d\]/);
     expect(text(methodRead)).toContain("return Map.of");
+  });
+
+  it("reads package-qualified Java inner type symbols", async () => {
+    const innerRead = await readTool({ path: qualifiedFixture, symbol: "com.example.qualified.QualifiedOuter.InnerType" });
+    const output = text(innerRead);
+
+    expect(output).toMatch(/^\[Symbol: InnerType \(class\) in QualifiedOuter, lines 4-8 of 10\]/);
+    expect(output).toContain("public static class InnerType");
+  });
+
+  it("reads package-qualified Java top-level types", async () => {
+    const outerRead = await readTool({ path: qualifiedFixture, symbol: "com.example.qualified.QualifiedOuter" });
+    const output = text(outerRead);
+
+    expect(output).toMatch(/^\[Symbol: QualifiedOuter \(class\), lines 3-9 of 10\]/);
+    expect(output).toContain("public class QualifiedOuter");
+    expect(output).toContain("public static class InnerType");
   });
 
   it("uses registered Java maps for local bundles and symbol-scoped grep", async () => {
