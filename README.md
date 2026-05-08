@@ -66,6 +66,19 @@ brew install shellcheck yq scc # optional, improves some bash-output compression
 
 Dedicated readmap mappers handle TypeScript, Python, Rust, Go, Java, C, C++, Swift, Clojure, shell, SQL, Markdown, and several data formats (JSON/JSONL/YAML/TOML/CSV) with the highest-quality structural maps. For files outside that set, the read tool's structural map falls back to universal-ctags when it is installed, and to a generic regex-based extractor when it is not. Installing universal-ctags is therefore only worthwhile if you regularly read files in languages without a dedicated mapper (for example Ruby, PHP, Lua, Kotlin) and want symbol-aware maps for them.
 
+### Known npm install warnings
+
+Installing `pi-hashline-readmap` prints a few `npm warn ERESOLVE` lines about `tree-sitter` peer dependencies, plus a `node-domexception@1.0.0` deprecation notice. These are cosmetic and do not break the install.
+
+Why they happen:
+
+- `tree-sitter-cpp` and `tree-sitter-java` (latest published versions) declare `peerOptional tree-sitter@"^0.21.1"`.
+- We pin `tree-sitter@0.22.4` because `tree-sitter-rust@0.23.3` requires `^0.22.1`, so we cannot go back to 0.21.x.
+- The `overrides` block in our `package.json` resolves this when this repo is the root project, but `overrides` are not honored when we are installed as a dependency, which is what `pi install` does. The grammars work fine against `tree-sitter@0.22.x` at runtime — the peer dep is `peerOptional`, npm just prints the mismatch.
+- `node-domexception` is a transitive deprecation, not one of our direct dependencies.
+
+These warnings will go away once `tree-sitter-cpp` / `tree-sitter-java` widen their peer ranges upstream; the `overrides` block can then be removed too.
+
 ## 30-second example
 
 The core workflow is: read a file, copy a `LINE:HASH` anchor, and edit against that verified anchor.
