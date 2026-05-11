@@ -20,6 +20,10 @@ Surgically edit files with hash-verified line references (anchors). Copy `LINE:H
 ### `replace` is the escape hatch
 `replace` does not use anchors and does not verify exact line positions. Use it only when an anchored edit is not practical, such as a repeated string replacement across many unrelated lines.
 
+By default, `replace` is exact-only: if `old_text` is not found exactly, the edit fails with `text-not-found`. Re-read the file and prefer anchored variants (`set_line`, `replace_lines`, `insert_after`) for hash-verified edits.
+
+Approximate/fuzzy replacement is available only with explicit opt-in via `fuzzy: true`. When fuzzy replacement is used, the edit output includes a warning that exact `old_text` was not found and fuzzy matching selected the replacement span.
+
 ## Input format
 
 ```json
@@ -38,6 +42,7 @@ Surgically edit files with hash-verified line references (anchors). Copy `LINE:H
 - `edits` is an array of edit operations
 - Each edit entry must contain exactly one of `set_line`, `replace_lines`, `insert_after`, `replace_symbol`, or `replace`
 - `new_text` is plain content — do not include hash prefixes or diff markers
+- `replace` also accepts optional `fuzzy: true` for explicit approximate matching; omit it unless you intentionally want fuzzy matching.
 
 ## Variant examples
 
@@ -84,13 +89,24 @@ edit({
 ```
 
 ### `replace`
-Use `replace` only as the escape hatch when anchored variants are not practical.
+Use `replace` only as the escape hatch when anchored variants are not practical. It is exact-only by default; if exact `old_text` is absent, re-read the file and prefer anchored variants.
 
 ```text
 edit({
   path: "src/foo.ts",
   edits: [
     { replace: { old_text: "legacyName", new_text: "newName", all: true } }
+  ]
+})
+```
+
+Explicit fuzzy opt-in:
+
+```text
+edit({
+  path: "src/foo.ts",
+  edits: [
+    { replace: { old_text: "legacyName", new_text: "newName", fuzzy: true } }
   ]
 })
 ```

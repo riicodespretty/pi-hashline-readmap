@@ -130,23 +130,26 @@ export function fuzzyFindText(
  * Fuzzy matching only determines target spans; replacement always applies to
  * the original content (never normalizes the whole file).
  */
+export type ReplaceTextResult = { content: string; count: number; usedFuzzyMatch: boolean };
+
 export function replaceText(
 	content: string,
 	oldText: string,
 	newText: string,
-	opts: { all?: boolean },
-): { content: string; count: number } {
-	if (!oldText.length) return { content, count: 0 };
+	opts: { all?: boolean; fuzzy?: boolean },
+): ReplaceTextResult {
+	if (!oldText.length) return { content, count: 0, usedFuzzyMatch: false };
 	const normalizedNew = normalizeToLF(newText);
 
 	if (opts.all) {
 		const exactCount = content.split(oldText).length - 1;
 		if (exactCount > 0) {
-			return { content: content.split(oldText).join(normalizedNew), count: exactCount };
+			return { content: content.split(oldText).join(normalizedNew), count: exactCount, usedFuzzyMatch: false };
 		}
+		if (!opts.fuzzy) return { content, count: 0, usedFuzzyMatch: false };
 
 		const normalizedNeedle = normalizeForFuzzyMatch(oldText);
-		if (!normalizedNeedle.length) return { content, count: 0 };
+		if (!normalizedNeedle.length) return { content, count: 0, usedFuzzyMatch: false };
 
 		const { normalized, indexMap } = buildNormalizedWithMap(content);
 		const spans: Array<{ index: number; matchLength: number }> = [];
@@ -165,22 +168,34 @@ export function replaceText(
 			searchFrom = pos + Math.max(1, normalizedNeedle.length);
 		}
 
-		if (!spans.length) return { content, count: 0 };
+		if (!spans.length) return { content, count: 0, usedFuzzyMatch: false };
 
 		let out = content;
 		for (let i = spans.length - 1; i >= 0; i--) {
 			const span = spans[i]!;
 			out = out.substring(0, span.index) + normalizedNew + out.substring(span.index + span.matchLength);
 		}
-		return { content: out, count: spans.length };
+		return { content: out, count: spans.length, usedFuzzyMatch: true };
 	}
 
+	const exactIndex = content.indexOf(oldText);
+	if (exactIndex !== -1) {
+		return {
+			content: content.substring(0, exactIndex) + normalizedNew + content.substring(exactIndex + oldText.length),
+			count: 1,
+			usedFuzzyMatch: false,
+		};
+	}
+
+	if (!opts.fuzzy) return { content, count: 0, usedFuzzyMatch: false };
+
 	const result = fuzzyFindText(content, oldText);
-	if (!result.found) return { content, count: 0 };
+	if (!result.found) return { content, count: 0, usedFuzzyMatch: false };
 
 	return {
 		content: content.substring(0, result.index) + normalizedNew + content.substring(result.index + result.matchLength),
 		count: 1,
+		usedFuzzyMatch: result.usedFuzzyMatch,
 	};
 }
 

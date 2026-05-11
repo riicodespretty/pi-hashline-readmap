@@ -39,7 +39,7 @@ const hashlineEditItemSchema = Type.Union([
 	),
 	Type.Object({ insert_after: Type.Object({ anchor: Type.String(), new_text: Type.String(), text: Type.Optional(Type.String()) }) }, { additionalProperties: true }),
 	Type.Object(
-		{ replace: Type.Object({ old_text: Type.String(), new_text: Type.String(), all: Type.Optional(Type.Boolean()) }) },
+		{ replace: Type.Object({ old_text: Type.String(), new_text: Type.String(), all: Type.Optional(Type.Boolean()), fuzzy: Type.Optional(Type.Boolean()) }) },
 		{ additionalProperties: true },
 	),
 	Type.Object(
@@ -199,7 +199,7 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				(e): e is HashlineEditItem => "set_line" in e || "replace_lines" in e || "insert_after" in e,
 			);
 			const replaceEdits = edits.filter(
-				(e): e is { replace: { old_text: string; new_text: string; all?: boolean } } => "replace" in e,
+				(e): e is { replace: { old_text: string; new_text: string; all?: boolean; fuzzy?: boolean } } => "replace" in e,
 			);
 			const replaceSymbolEdits = edits.filter(
 				(e): e is { replace_symbol: { symbol: string; new_body: string } } => "replace_symbol" in e,
@@ -360,16 +360,28 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			}
 			result = anchorResult.content;
 
+			const replaceWarnings: string[] = [];
 			for (const r of replaceEdits) {
 				throwIfAborted(signal);
 				if (!r.replace.old_text.length) {
 					const message = "replace.old_text must not be empty.";
 					return buildEditError(absolutePath, "invalid-edit-variant", message);
 				}
-				const rep = replaceText(result, r.replace.old_text, r.replace.new_text, { all: r.replace.all ?? false });
+				const rep = replaceText(result, r.replace.old_text, r.replace.new_text, {
+					all: r.replace.all ?? false,
+					fuzzy: r.replace.fuzzy ?? false,
+				});
 				if (!rep.count) {
-					const message = `Could not find text to replace in ${path}.`;
-					return buildEditError(absolutePath, "text-not-found", message);
+					const message = `Could not find exact text to replace in ${path}.`;
+					const hint =
+						"Re-read the file and prefer set_line/replace_lines/insert_after for hash-verified edits. " +
+						"The replace variant is exact-only by default because fuzzy fallback is unverified.";
+					return buildEditError(absolutePath, "text-not-found", message, hint);
+				}
+				if (rep.usedFuzzyMatch) {
+					replaceWarnings.push(
+						"replace used fuzzy matching because exact old_text was not found; re-read the file and prefer set_line/replace_lines/insert_after for hash-verified edits.",
+					);
 				}
 				result = rep.content;
 			}
@@ -459,6 +471,7 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			const warnings: string[] = [];
 			if (anchorResult.warnings?.length) warnings.push(...anchorResult.warnings);
 			if (legacyNormalizationWarning) warnings.push(legacyNormalizationWarning);
+			if (replaceWarnings.length) warnings.push(...replaceWarnings);
 			if (replaceSymbolWarnings.length) warnings.push(...replaceSymbolWarnings);
 			if (syntaxWarning) warnings.push(syntaxWarning);
 			// Semantic classification
