@@ -13,20 +13,27 @@ describe("prompts/nu.md", () => {
     expect(content).toContain("bash");
   });
 
-  it("mentions exploration and investigation use case", () => {
+  it("mentions structured exploration and data wrangling use cases", () => {
     const content = readFileSync(resolve(__dirname, "../prompts/nu.md"), "utf-8");
-    expect(content).toContain("exploration");
+    expect(content).toContain("data wrangling");
   });
 
-  it("documents Tier 1 + Tier 2 split while keeping a short first paragraph", () => {
+  it("keeps a short first paragraph and documents failure hints", () => {
     const content = readFileSync(resolve(__dirname, "../prompts/nu.md"), "utf-8");
     // First paragraph stays short so NU_DESC (derived from it) does not grow.
     const firstParagraph = content.split(/\n\s*\n/, 1)[0]!.trim();
     expect(firstParagraph.length).toBeGreaterThan(0);
     expect(firstParagraph.length).toBeLessThanOrEqual(400);
-    // Rest of the file documents the Tier 1 / Tier 2 split.
-    expect(content).toMatch(/Tier 1/i);
-    expect(content).toMatch(/Tier 2/i);
+    expect(content).toContain("[nu-hint]");
+    expect(content).toContain("Nushell syntax is not POSIX shell syntax");
+  });
+
+  it("documents bash routing, timeout, truncation, and hint markers", () => {
+    const content = readFileSync(resolve(__dirname, "../prompts/nu.md"), "utf-8");
+
+    expect(content).toContain("tests, builds, git, package managers, and project commands");
+    expect(content).toContain("default 30");
+    expect(content).toContain("2000 lines or 50 KB");
     expect(content).toContain("[nu-hint]");
   });
 });

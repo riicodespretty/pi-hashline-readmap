@@ -23,4 +23,15 @@ describe("find prompt loading", () => {
     const tool = captureTool(registerFindTool);
     expect(tool.description).toBe(firstParagraph(resolve("prompts/find.md")));
   });
+
+  it("documents basename matching, filters, sorting, and limit order", () => {
+    const content = readFileSync(resolve("prompts/find.md"), "utf8");
+
+    expect(content).toContain("regex: true");
+    expect(content).toContain("basename");
+    expect(content).toContain("modified strictly after");
+    expect(content).toContain("Filtering and sorting happen before `limit`");
+    expect(content).toContain("minSize");
+    expect(content).toContain("maxSize");
+  });
 });

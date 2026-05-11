@@ -23,4 +23,14 @@ describe("ls prompt loading", () => {
     const tool = captureTool(registerLsTool);
     expect(tool.description).toBe(firstParagraph(resolve("prompts/ls.md")));
   });
+
+  it("documents single-directory output and routing to find/read", () => {
+    const content = readFileSync(resolve("prompts/ls.md"), "utf8");
+
+    expect(content).toContain("List one directory");
+    expect(content).toContain("dotfiles are included");
+    expect(content).toContain("Output is one entry per line");
+    expect(content).toContain("find` for recursive discovery");
+    expect(content).toContain("read` for file contents");
+  });
 });

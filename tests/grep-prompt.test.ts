@@ -42,7 +42,7 @@ describe("prompts/grep.md", () => {
     expect(content).toContain("scope");
     expect(content).toContain("literal");
     expect(content).toContain("Results truncated at");
-    expect(content).toContain("Output truncated:");
+    expect(content).toContain("head-truncate");
   });
 
   it("documents the grep → edit workflow", () => {
