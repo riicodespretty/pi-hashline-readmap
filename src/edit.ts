@@ -1,7 +1,7 @@
 import { renderDiff, type ExtensionAPI, type EditToolDetails, type ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import type { Static } from "@sinclair/typebox";
-import { readFileSync } from "fs";
+import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
 import { detectLineEnding, generateCompactOrFullDiff, normalizeToLF, replaceText, restoreLineEndings, stripBom } from "./edit-diff";
 import { HashlineMismatchError, applyHashlineEdits, computeLineHash, ensureHashInit, parseLineRef, type HashlineEditItem, escapeControlCharsForDisplay } from "./hashline";
@@ -58,7 +58,15 @@ const hashlineEditSchema = Type.Object(
 
 type HashlineParams = Static<typeof hashlineEditSchema>;
 
-const EDIT_DESC = readFileSync(new URL("../prompts/edit.md", import.meta.url), "utf-8").trim();
+const EDIT_PROMPT_METADATA = defineToolPromptMetadata({
+	promptUrl: new URL("../prompts/edit.md", import.meta.url),
+	promptSnippet: "Edit files using hash-verified anchors from read/grep/ast_search/write",
+	promptGuidelines: [
+		"Use edit for changes to existing files; read or search first and copy fresh LINE:HASH anchors.",
+		"Prefer edit anchored set_line, replace_lines, and insert_after over shell rewrites.",
+		"Use edit replace only when anchored edits are impractical.",
+	],
+});
 
 function buildEditError(
 	path: string,
@@ -106,7 +114,9 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 	const tool = {
 		name: "edit",
 		label: "Edit",
-		description: EDIT_DESC,
+		description: EDIT_PROMPT_METADATA.description,
+		promptSnippet: EDIT_PROMPT_METADATA.promptSnippet,
+		promptGuidelines: EDIT_PROMPT_METADATA.promptGuidelines,
 		parameters: hashlineEditSchema,
 		ptc,
 		renderShell: "default" as const,

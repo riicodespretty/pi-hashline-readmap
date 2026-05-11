@@ -7,7 +7,7 @@ import {
 	DEFAULT_MAX_LINES,
 } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { readFileSync } from "fs";
+import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { readFile as fsReadFile } from "fs/promises";
 import { normalizeToLF, stripBom, hasBareCarriageReturn } from "./edit-diff";
 import { ensureHashInit, formatHashlineDisplay } from "./hashline";
@@ -26,10 +26,15 @@ import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 import { Text } from "@mariozechner/pi-tui";
 import { formatReadCallText, formatReadResultText } from "./read-render-helpers.js";
 
-const READ_DESC = readFileSync(new URL("../prompts/read.md", import.meta.url), "utf-8")
-	.replaceAll("{{DEFAULT_MAX_LINES}}", String(DEFAULT_MAX_LINES))
-	.replaceAll("{{DEFAULT_MAX_BYTES}}", formatSize(DEFAULT_MAX_BYTES))
-	.trim();
+const READ_PROMPT_METADATA = defineToolPromptMetadata({
+	promptUrl: new URL("../prompts/read.md", import.meta.url),
+	promptSnippet: "Read files with hashline anchors and optional maps/symbol lookup",
+	promptGuidelines: [
+		"Use read instead of bash cat/head/tail/sed for file inspection.",
+		"Use read offset/limit, symbol, or map to keep large files focused.",
+		"Use read anchors as fresh inputs for edit.",
+	],
+});
 
 interface ReadParams {
 	path: string;
@@ -57,7 +62,9 @@ export function registerReadTool(pi: ExtensionAPI, options: ReadToolOptions = {}
 	const tool = {
 		name: "read",
 		label: "Read",
-		description: READ_DESC,
+		description: READ_PROMPT_METADATA.description,
+		promptSnippet: READ_PROMPT_METADATA.promptSnippet,
+		promptGuidelines: READ_PROMPT_METADATA.promptGuidelines,
 		parameters: Type.Object({
 			path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
 			offset: Type.Optional(

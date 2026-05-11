@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { readFileSync } from "node:fs";
+import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { execFileSync, execFile } from "node:child_process";
 import { resolve, relative, join } from "node:path";
@@ -13,8 +13,15 @@ import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 
 const MAX_BYTES = 50 * 1024; // 50 KB
 const DEFAULT_LIMIT = 1000;
-const FIND_PROMPT = readFileSync(new URL("../prompts/find.md", import.meta.url), "utf-8").trim();
-const FIND_DESC = FIND_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? FIND_PROMPT;
+const FIND_PROMPT_METADATA = defineToolPromptMetadata({
+  promptUrl: new URL("../prompts/find.md", import.meta.url),
+  promptSnippet: "Find files recursively by name, respecting gitignore",
+  promptGuidelines: [
+    "Use find for recursive file-name discovery; use ls for one directory.",
+    "Use find path plus basename pattern rather than shell find commands.",
+    "Use find filters and sorting before limit for newest/largest file queries.",
+  ],
+});
 
 export const FIND_PTC = {
   callable: true,
@@ -289,7 +296,9 @@ export function registerFindTool(pi: ExtensionAPI) {
   const tool: Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof FIND_PTC } = {
     name: "find",
     label: "find",
-    description: FIND_DESC,
+    description: FIND_PROMPT_METADATA.description,
+    promptSnippet: FIND_PROMPT_METADATA.promptSnippet,
+    promptGuidelines: FIND_PROMPT_METADATA.promptGuidelines,
     ptc: FIND_PTC,
     parameters: Type.Object(
       {

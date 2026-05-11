@@ -4,7 +4,7 @@ import { Type } from "@sinclair/typebox";
 import * as cp from "node:child_process";
 import path from "node:path";
 import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { normalizeToLF, stripBom } from "./edit-diff.js";
 import { ensureHashInit } from "./hashline.js";
 import { buildPtcError, buildPtcLine } from "./ptc-value.js";
@@ -85,8 +85,15 @@ export async function findEnclosingSgSymbols(absPath: string, ranges: SgRange[])
   return found;
 }
 
-const SG_PROMPT = readFileSync(new URL("../prompts/sg.md", import.meta.url), "utf-8").trim();
-const SG_DESC = SG_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? SG_PROMPT;
+const SG_PROMPT_METADATA = defineToolPromptMetadata({
+  promptUrl: new URL("../prompts/sg.md", import.meta.url),
+  promptSnippet: "Search code structurally with ast-grep and return edit-ready anchors",
+  promptGuidelines: [
+    "Use ast_search when text search is too broad or brittle and the query depends on code shape.",
+    "Use ast_search for calls, imports, declarations, JSX, and similar syntax patterns.",
+    "Use grep instead of ast_search for plain text search.",
+  ],
+});
 
 function execFileText(
   cmd: string,
@@ -140,7 +147,9 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
   const tool = {
     name: "ast_search",
     label: "AST Search",
-    description: SG_DESC,
+    description: SG_PROMPT_METADATA.description,
+    promptSnippet: SG_PROMPT_METADATA.promptSnippet,
+    promptGuidelines: SG_PROMPT_METADATA.promptGuidelines,
     parameters: Type.Object({
       pattern: Type.String({ description: "AST pattern to search for" }),
       lang: Type.Optional(Type.String({ description: "Language hint for ast-grep (e.g. 'typescript')" })),
