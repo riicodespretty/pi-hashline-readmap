@@ -25,15 +25,12 @@ describe("registerGrepTool with astSearchGuideline", () => {
     expect((tool as any).promptGuidelines).toContain(guideline);
   });
 
-  it("does not include ast_search guideline when option is not provided", () => {
+  it("does not include the injected astSearchGuideline when option is not provided", () => {
     const pi = createMockPi();
+    const injected = "Use `ast_search` for structural code patterns.";
     const tool = registerGrepTool(pi);
     const guidelines = (tool as any).promptGuidelines;
-    // Should either be undefined or not contain ast_search text
-    if (guidelines) {
-      for (const g of guidelines) {
-        expect(g).not.toContain("ast_search");
-      }
-    }
+    expect(guidelines).toBeDefined();
+    expect(guidelines).not.toContain(injected);
   });
 });

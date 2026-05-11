@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { readFileSync } from "node:fs";
+import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { readdir, stat } from "node:fs/promises";
 import { resolveToCwd } from "./path-utils.js";
 import { buildPtcError } from "./ptc-value.js";
@@ -10,8 +10,15 @@ import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 const MAX_BYTES = 50 * 1024; // 50 KB
 const DEFAULT_LIMIT = 500;
 
-const LS_PROMPT = readFileSync(new URL("../prompts/ls.md", import.meta.url), "utf-8").trim();
-const LS_DESC = LS_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? LS_PROMPT;
+const LS_PROMPT_METADATA = defineToolPromptMetadata({
+  promptUrl: new URL("../prompts/ls.md", import.meta.url),
+  promptSnippet: "List one directory with directories first and dotfiles included",
+  promptGuidelines: [
+    "Use ls to inspect one directory; use find for recursive discovery.",
+    "Use ls glob to narrow a single-directory listing.",
+    "Use read, not ls, for file contents.",
+  ],
+});
 
 export const LS_PTC = {
   callable: true,
@@ -95,7 +102,9 @@ export function registerLsTool(pi: ExtensionAPI) {
   const tool: Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof LS_PTC } = {
     name: "ls",
     label: "ls",
-    description: LS_DESC,
+    description: LS_PROMPT_METADATA.description,
+    promptSnippet: LS_PROMPT_METADATA.promptSnippet,
+    promptGuidelines: LS_PROMPT_METADATA.promptGuidelines,
     ptc: LS_PTC,
     parameters: Type.Object({
       path: Type.Optional(Type.String({ description: "Directory to list (default: cwd)" })),

@@ -2,12 +2,13 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { buildPtcError } from "./ptc-value.js";
 import { stripAnsi } from "./rtk/ansi.js";
+import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 
 const MAX_LINES = 2000;
 const MAX_BYTES = 50 * 1024; // 50 KB
@@ -248,9 +249,6 @@ export function augmentNuOutput(result: NuExecuteResult): string {
 // Prompt & registration
 // ---------------------------------------------------------------------------
 
-const NU_PROMPT = readFileSync(new URL("../prompts/nu.md", import.meta.url), "utf-8").trim();
-const NU_DESC = NU_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? NU_PROMPT;
-
 const NU_SNIPPET =
   "Structured exploration shell — file inspection, data wrangling, system queries via Nushell pipelines. Use bash for project commands.";
 
@@ -269,10 +267,16 @@ export const NU_GUIDELINES: string[] = [
 | Build Docker image | bash |
 | Explore an API response | nu |
 | Run a Makefile target | bash |`,
-  `Primer: ls | where size > 10kb | first 5 · open package.json | get scripts · http get URL | get results · where / sort-by / first / length / math sum / group-by · strings in filters must be quoted.`,
+  `nu primer: ls | where size > 10kb | first 5 · open package.json | get scripts · http get URL | get results · where / sort-by / first / length / math sum / group-by · strings in filters must be quoted.`,
 
   `Optional plugins if installed: gstat, query, formats, semver, file. Run \`plugin list\` inside nu to check availability.`,
 ];
+
+const NU_PROMPT_METADATA = defineToolPromptMetadata({
+  promptUrl: new URL("../prompts/nu.md", import.meta.url),
+  promptSnippet: NU_SNIPPET,
+  promptGuidelines: NU_GUIDELINES,
+});
 
 export const NU_PTC = {
   callable: true,
@@ -295,9 +299,9 @@ export function registerNuTool(pi: ExtensionAPI): NuToolDefinition | false {
   const tool = {
     name: "nu",
     label: "nushell",
-    description: NU_DESC,
-    promptSnippet: NU_SNIPPET,
-    promptGuidelines: NU_GUIDELINES,
+    description: NU_PROMPT_METADATA.description,
+    promptSnippet: NU_PROMPT_METADATA.promptSnippet,
+    promptGuidelines: NU_PROMPT_METADATA.promptGuidelines,
     ptc: NU_PTC,
     parameters: Type.Object({
       command: Type.String({ description: "Nushell script to run. May be multi-line." }),

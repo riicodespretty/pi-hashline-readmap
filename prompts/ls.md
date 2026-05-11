@@ -1,20 +1,11 @@
-List directory contents. Shows directories first (with `/` suffix), then files, sorted alphabetically. Always includes dotfiles. Returns structured metadata for programmatic use.
+List one directory. Shows directories first with `/`, then files, sorted alphabetically; dotfiles are included.
 
 ## Parameters
 
-- `path` — Directory to list (default: current directory)
-- `limit` — Maximum entries to return (default: 500)
-- `glob` — Filter entries by glob pattern, e.g. `'*.ts'` or `'.env*'`
+- `path` — directory to list, default cwd.
+- `limit` — max entries, default 500; must be positive.
+- `glob` — optional entry-name filter such as `*.ts` or `.env*`.
 
-## Output
+## Usage
 
-One entry per line. Directories appear first with a trailing `/` suffix. Files follow, sorted alphabetically (case-insensitive). Hidden files (dotfiles) are always included.
-
-When the entry count exceeds `limit`, a truncation notice is appended. Output is also bounded at 50 KB.
-
-## Usage Guidance
-
-- Use `ls` to inspect a single directory's structure
-- Use `glob` to narrow results without switching to `find` (e.g. `glob: "*.ts"`)
-- Use `find` instead for recursive file discovery across multiple directories
-- Use `read` to inspect file contents — `ls` only shows names
+Output is one entry per line. Use `ls` to inspect a single directory, `find` for recursive discovery, and `read` for file contents. If output exceeds `limit` or 50 KB, it says so.

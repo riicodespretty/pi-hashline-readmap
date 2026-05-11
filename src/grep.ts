@@ -3,7 +3,7 @@ import { createGrepTool } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { readFile as fsReadFile, stat as fsStat } from "fs/promises";
 import path from "path";
-import { readFileSync } from "node:fs";
+import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { normalizeToLF, stripBom, hasBareCarriageReturn } from "./edit-diff";
 import { looksLikeBinary } from "./binary-detect";
 import { ensureHashInit, formatHashlineDisplay, escapeControlCharsForDisplay } from "./hashline";
@@ -18,8 +18,15 @@ import { Text } from "@mariozechner/pi-tui";
 import { formatGrepCallText, formatGrepResultText } from "./grep-render-helpers.js";
 import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 
-const GREP_PROMPT = readFileSync(new URL("../prompts/grep.md", import.meta.url), "utf-8").trim();
-const GREP_DESC = GREP_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? GREP_PROMPT;
+const GREP_PROMPT_METADATA = defineToolPromptMetadata({
+	promptUrl: new URL("../prompts/grep.md", import.meta.url),
+	promptSnippet: "Search file contents and return edit-ready hashline anchors",
+	promptGuidelines: [
+		"Use grep for text search across files instead of bash grep or rg.",
+		"Use grep summary mode when you only need matching files or counts.",
+		"Use ast_search instead of grep when the query depends on code structure.",
+	],
+});
 
 const grepSchema = Type.Object({
 	pattern: Type.String({ description: "Search pattern (regex or literal string)" }),
@@ -294,10 +301,13 @@ export function registerGrepTool(pi: ExtensionAPI, options: GrepToolOptions = {}
 	const tool = {
 		name: "grep",
 		label: "grep",
-		description: GREP_DESC,
+		description: GREP_PROMPT_METADATA.description,
 		parameters: grepSchema,
 		ptc,
-		promptGuidelines: options.astSearchGuideline ? [options.astSearchGuideline] : undefined,
+		promptSnippet: GREP_PROMPT_METADATA.promptSnippet,
+		promptGuidelines: options.astSearchGuideline
+			? [...GREP_PROMPT_METADATA.promptGuidelines, options.astSearchGuideline]
+			: GREP_PROMPT_METADATA.promptGuidelines,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			await ensureHashInit();
 			const rawParams = params as GrepParams;

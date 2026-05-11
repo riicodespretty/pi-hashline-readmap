@@ -27,11 +27,14 @@ describe("prompt loading — write", () => {
     expect(tool.description).toBe(firstParagraph(promptPath));
   });
 
-  it("documents binary no-anchor behavior, safe display escaping, and best-effort map appends", () => {
+  it("documents overwrite, binary no-anchor behavior, safe display escaping, and best-effort map appends", () => {
     const promptPath = resolve("prompts/write.md");
     const content = readFileSync(promptPath, "utf8");
+    expect(content).toContain("overwrites existing files");
+    expect(content).toContain("Existing files are overwritten without confirmation");
     expect(content).toContain("no anchors to feed into `edit`");
     expect(content).toContain("control characters");
-    expect(content).toContain("map append is best-effort");
+    expect(content).toMatch(/`map` — optional/i);
+    expect(content).toMatch(/map append is best-effort/i);
   });
 });

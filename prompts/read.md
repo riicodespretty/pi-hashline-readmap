@@ -1,61 +1,33 @@
-Read a file. For text files, each line is prefixed with `LINE:HASH|` (e.g., `12:abc|content`). Use these references as anchors for the `edit` tool.
-Images (`jpg`, `png`, `gif`, `webp`) are delegated to the built-in image reader and returned as image attachments.
+Read text files with `LINE:HASH|content` anchors usable by `edit`. Default cap: {{DEFAULT_MAX_LINES}} lines or {{DEFAULT_MAX_BYTES}}. Images return attachments, not edit anchors.
 
-Default limit: {{DEFAULT_MAX_LINES}} lines or {{DEFAULT_MAX_BYTES}}.
+## Parameters
 
-When a file is truncated (exceeds {{DEFAULT_MAX_LINES}} lines or {{DEFAULT_MAX_BYTES}}), a **structural map** is appended after the hashlined content showing file symbols (classes, functions, interfaces, etc.) with line ranges.
+- `offset` / `limit` — positive line numbers for targeted reads; `offset` is 1-indexed.
+- `map: true` — append a full-file structural map even for small files. May combine with `offset` / `limit`; cannot combine with `symbol` or `bundle`.
+- `symbol: "Name"` — read one symbol range by name, with hash anchors. Supports `ClassName.method`, Java package-relative names, and `Name@<line>` disambiguation. Cannot combine with `offset` / `limit`.
+- `bundle: "local"` — with `symbol`, also include direct same-file local support when available. Cannot combine with `map`.
 
-Use the appended map for targeted reads with `offset` and `limit` — e.g., `read(path, { offset: LINE, limit: N })`.
-When provided, `offset` and `limit` must be positive integers; `0` and negative values are invalid.
+When a full-file read is truncated, a structural map is appended automatically when available. Use that map's line ranges for follow-up `read({ offset, limit })`. Structural maps support many common code/data formats and may fall back to ctags/heuristics.
 
-Maps support 18 mapped language/file kinds — including TypeScript, JavaScript, Python, Rust, Go, Java, C, C headers, C++, Swift, Shell, Clojure, SQL, JSON, JSONL, Markdown, YAML, TOML, and CSV/TSV — and use in-memory caching with optional persistent caching across sessions.
+## Symbol examples
 
-## Map Parameter
+| Query | Reads |
+|---|---|
+| `{ "symbol": "processEvent" }` | function or top-level symbol |
+| `{ "symbol": "EventEmitter" }` | class/interface/type/enum/etc. |
+| `{ "symbol": "EventEmitter.emit" }` | child method/member |
+| `{ "symbol": "Foo.bar@42" }` | specific overload/definition near line 42 |
+| `{ "symbol": "handleRequest", "bundle": "local" }` | symbol plus direct local support |
 
-Use the `map` parameter to request a structural map alongside the file content:
+## Symbol resolution
 
-- `read(path, { map: true })` — appends the structural map after hashlined content, even for small files
-- `read(path, { map: true, offset: 50, limit: 20 })` — scoped hashlines with full-file map
+`@<line>` only applies as a trailing suffix like `Foo.bar@42`; names such as `foo@bar` are ordinary queries. Resolution order: containing range → nearest symbol starting at/after the requested line → nearest symbol above it. If unresolved but same-name candidates exist, the response lists retry hints like `name@<startLine>`.
 
-**Mutual exclusivity:** `map` cannot be combined with `symbol`. Use one or the other.
+Result behavior:
+- **Found**: returns only the symbol range with `[Symbol: name (kind), lines X-Y of Z]`.
+- **Ambiguous**: returns candidate names/kinds/ranges; retry with dot notation or `@<line>`.
+- **Fuzzy**: returns the best camelCase/substring match with a warning banner and confirmation hint. Verify before editing from fuzzy-match anchors.
+- **Not found**: falls back to normal read with a warning listing available symbols.
+- **Unmappable**: falls back to normal read with a warning.
 
-When `map` is not specified, structural maps are only appended automatically when a file exceeds the truncation threshold.
-
-## Symbol Parameter
-
-Use the `symbol` parameter to read a specific symbol by name — no line numbers needed:
-
-- `read(path, { symbol: "functionName" })` — reads just that function
-- `read(path, { symbol: "ClassName.methodName" })` — reads a method inside a class (dot notation)
-
-**Examples by symbol type:**
-
-| Type | Example | What it reads |
-|------|---------|---------------|
-| Function | `{ symbol: "processEvent" }` | The full function body |
-| Class | `{ symbol: "EventEmitter" }` | The entire class declaration |
-| Method | `{ symbol: "EventEmitter.emit" }` | A single method within a class |
-| Interface | `{ symbol: "RequestOptions" }` | The full interface declaration |
-| Type alias | `{ symbol: "EventHandler" }` | The type alias definition |
-| Const/variable | `{ symbol: "DEFAULT_TIMEOUT" }` | The const/let/var declaration |
-| Enum | `{ symbol: "LogLevel" }` | The full enum declaration |
-
-**Mutual exclusivity:** `symbol` cannot be combined with `offset` or `limit`. Use one addressing mode or the other.
-
-**`@line` disambiguation:** append `@<digits>` to a symbol query to pick a specific overload or definition by line number, e.g. `read(path, { symbol: "Foo.bar@42" })`. The `@<digits>` suffix only matches at end-of-string — ordinary names like `@Override`, `foo@bar`, or `foo@1bar` are treated as plain names, not `@line` queries. Resolution order:
-
-1. **Containing range** — a candidate whose `[startLine, endLine]` contains the requested line.
-2. **Nearest at-or-below** — the candidate with the smallest `startLine >= line`.
-3. **Nearest above** — the candidate with the largest `startLine < line`.
-
-When `@line` cannot be resolved but other declarations of the same leaf name exist in the file, the not-found message lists candidate `name@<startLine>` references so you can retry with a precise line.
-
-**Behavior by result:**
-
-- **Found (exact / case-insensitive / prefix):** Returns hashlined content for the symbol's line range only, prepended with `[Symbol: name (kind), lines X-Y of Z]`. Silent — no banner.
-- **Ambiguous (multiple matches):** Returns a disambiguation list with each candidate's name, kind, and line range. Use dot notation (e.g., `ClassName.methodName`) to narrow the match.
-- **Fuzzy (low-confidence match):** Returns the best match's content prefixed with a `[Symbol '<query>' not exact-matched ...]` banner that names the matched symbol, the match tier (`camelCase word boundary` or `substring`), up to 4 other candidates, and a `read({ symbol: "..." })` / `name@line` confirmation hint. Content is still returned so no extra round-trip is required when the guess is right, but the banner is a required signal that the match was approximate — re-verify before editing based on it.
-- **Not found:** Falls back to a normal read with a warning listing up to 20 available symbol names.
-- **Unmappable file:** Falls back to a normal read with a warning noting the file type doesn't support symbol lookup.
-
-Hash anchors from symbol reads are valid for use with the `edit` tool.
+Hash anchors from symbol and bundled reads are valid for `edit`.

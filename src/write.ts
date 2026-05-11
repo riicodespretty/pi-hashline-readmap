@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, relative } from "node:path";
 import { resolveToCwd } from "./path-utils.js";
 import { ensureHashInit, formatHashlineDisplay } from "./hashline.js";
@@ -10,11 +10,19 @@ import { looksLikeBinary } from "./binary-detect.js";
 import { getOrGenerateMap } from "./map-cache.js";
 import { formatFileMapWithBudget } from "./readmap/formatter.js";
 import { buildContextHygieneMetadata, buildFileResource, type ContextHygieneMetadata } from "./context-hygiene.js";
+import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 
 const MAX_LINES = 2000;
 const MAX_BYTES = 50 * 1024;
-const WRITE_PROMPT = readFileSync(new URL("../prompts/write.md", import.meta.url), "utf-8").trim();
-const WRITE_DESC = WRITE_PROMPT.split(/\n\s*\n/, 1)[0]?.trim() ?? WRITE_PROMPT;
+const WRITE_PROMPT_METADATA = defineToolPromptMetadata({
+  promptUrl: new URL("../prompts/write.md", import.meta.url),
+  promptSnippet: "Create or overwrite a complete file and return edit anchors",
+  promptGuidelines: [
+    "Use write to create new files or intentionally replace whole files.",
+    "Use edit instead of write for small changes or appends to existing files.",
+    "Remember write overwrites existing files without confirmation.",
+  ],
+});
 
 export interface WriteResult {
   text: string;
@@ -195,7 +203,9 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
   const tool = {
     name: "write",
     label: "write",
-    description: WRITE_DESC,
+    description: WRITE_PROMPT_METADATA.description,
+    promptSnippet: WRITE_PROMPT_METADATA.promptSnippet,
+    promptGuidelines: WRITE_PROMPT_METADATA.promptGuidelines,
     parameters: Type.Object({
       path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
       content: Type.String({ description: "Content to write to the file" }),
