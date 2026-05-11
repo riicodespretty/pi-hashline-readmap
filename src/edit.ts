@@ -1,4 +1,4 @@
-import { renderDiff, type ExtensionAPI, type EditToolDetails, type ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
+import { renderDiff, withFileMutationQueue, type ExtensionAPI, type EditToolDetails, type ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import type { Static } from "@sinclair/typebox";
 import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
@@ -128,6 +128,8 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			const path = rawPath.replace(/^@/, "");
 			const absolutePath = resolveToCwd(path, ctx.cwd);
 			throwIfAborted(signal);
+			return withFileMutationQueue(absolutePath, async () => {
+				throwIfAborted(signal);
 			if (options.wasReadInSession && !options.wasReadInSession(absolutePath)) {
 				const message = [
 					`You must get fresh anchors for ${absolutePath} before editing it.`,
@@ -535,6 +537,7 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 					};
 				},
 			};
+			});
 		},
 		renderCall(args: any, theme: any, ...rest: any[]) {
 			const context: { argsComplete?: boolean; lastComponent?: any } = rest[0] ?? {};

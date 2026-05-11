@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { withFileMutationQueue, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -214,6 +214,7 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
     async execute(_toolCallId: string, params: { path: string; content: string; map?: boolean }, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any): Promise<any> {
       const cwd = ctx?.cwd ?? process.cwd();
       const absolutePath = resolveToCwd(params.path, cwd);
+      return withFileMutationQueue(absolutePath, async () => {
       let result: WriteResult;
       try {
         result = await executeWrite({
@@ -279,6 +280,7 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
           contextHygiene: result.contextHygiene,
         },
       };
+      });
     },
     renderCall(args: any, theme: any) {
       const { path } = args as { path: string };
