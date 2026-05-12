@@ -11,6 +11,15 @@ import { getOrGenerateMap } from "./map-cache.js";
 import { formatFileMapWithBudget } from "./readmap/formatter.js";
 import { buildContextHygieneMetadata, buildFileResource, type ContextHygieneMetadata } from "./context-hygiene.js";
 import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
+import { buildPendingWritePreviewData, buildWritePreviewKey, resolvePendingDiffPreview, type PendingDiffPreviewResult } from "./pending-diff-preview.js";
+
+const WRITE_PENDING_PREVIEW_STATE_KEY = "hashline-write-pending-preview";
+
+function formatPendingWritePreviewText(summary: string, preview: PendingDiffPreviewResult | undefined): string {
+	if (!preview || preview.type !== "ok") return summary;
+	const diff = preview.data.diff ? `\n${preview.data.diff}` : "";
+	return `${summary}\n${preview.data.headerLabel}${diff}`;
+}
 
 const MAX_LINES = 2000;
 const MAX_BYTES = 50 * 1024;
@@ -282,10 +291,21 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       };
       });
     },
-    renderCall(args: any, theme: any) {
+    renderCall(args: any, theme: any, context: any = {}) {
       const { path } = args as { path: string };
       const label = theme.fg("toolTitle", "✏️ write");
-      return new Text(`${label} ${theme.fg("muted", path)}`, 0, 0);
+      let text = `${label} ${theme.fg("muted", path)}`;
+      const previewKey = buildWritePreviewKey(args ?? {});
+      const preview = resolvePendingDiffPreview(
+        context,
+        WRITE_PENDING_PREVIEW_STATE_KEY,
+        previewKey,
+        () => buildPendingWritePreviewData(args ?? {}, context.cwd ?? process.cwd()),
+      );
+      text = formatPendingWritePreviewText(text, preview);
+      const component = context.lastComponent ?? new Text("", 0, 0);
+      component.setText(text);
+      return component;
     },
     renderResult(result: any, _options: any, theme: any) {
       const output = result.content[0]?.type === "text"

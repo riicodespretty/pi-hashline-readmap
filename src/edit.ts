@@ -16,6 +16,15 @@ import { formatEditCallText, formatEditResultText } from "./edit-render-helpers.
 import { validateSyntaxRegression } from "./edit-syntax-validate.js";
 import { resolveSyntaxValidateMode, type SyntaxValidateOptions } from "./syntax-validate-mode.js";
 import { replaceSymbol } from "./replace-symbol.js";
+import { buildEditPreviewKey, buildPendingEditPreviewData, resolvePendingDiffPreview, type PendingDiffPreviewResult } from "./pending-diff-preview.js";
+
+const EDIT_PENDING_PREVIEW_STATE_KEY = "hashline-edit-pending-preview";
+
+function formatPendingPreviewText(summary: string, preview: PendingDiffPreviewResult | undefined): string {
+	if (!preview || preview.type !== "ok") return summary;
+	const diff = preview.data.diff ? `\n${preview.data.diff}` : "";
+	return `${summary}\n${preview.data.headerLabel}${diff}`;
+}
 
 export function wrapWriteError(err: any, path: string): Error {
 	const code = err?.code;
@@ -540,19 +549,23 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			});
 		},
 		renderCall(args: any, theme: any, ...rest: any[]) {
-			const context: { argsComplete?: boolean; lastComponent?: any } = rest[0] ?? {};
+			const context: { argsComplete?: boolean; lastComponent?: any; cwd?: string; state?: Record<string, any>; invalidate?: () => void } = rest[0] ?? {};
 			const argsComplete = context.argsComplete ?? false;
 			const { path: filePath, suffix } = formatEditCallText(args, argsComplete);
 
 			let text = theme.fg("toolTitle", theme.bold("edit"));
-			if (filePath) {
-				text += ` ${theme.fg("accent", filePath)}`;
-			} else {
-				text += ` ${theme.fg("toolOutput", "...")}`;
-			}
-			if (suffix) {
-				text += ` ${theme.fg("dim", suffix)}`;
-			}
+			if (filePath) text += ` ${theme.fg("accent", filePath)}`;
+			else text += ` ${theme.fg("toolOutput", "...")}`;
+			if (suffix) text += ` ${theme.fg("dim", suffix)}`;
+
+			const previewKey = buildEditPreviewKey(args ?? {});
+			const preview = resolvePendingDiffPreview(
+				context,
+				EDIT_PENDING_PREVIEW_STATE_KEY,
+				previewKey,
+				() => buildPendingEditPreviewData(args ?? {}, context.cwd ?? process.cwd()),
+			);
+			text = formatPendingPreviewText(text, preview);
 
 			const component = context.lastComponent ?? new Text("", 0, 0);
 			component.setText(text);
