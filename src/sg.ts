@@ -165,10 +165,8 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
         path: p.path,
       });
       const args = ["run", "--json", "-p", p.pattern];
-      if (p.lang) args.push("-l", p.lang);
 
       const searchPath = resolveToCwd(p.path ?? ".", ctx.cwd);
-      args.push(searchPath);
 
       try {
         await fsStat(searchPath);
@@ -217,6 +215,25 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
           },
         };
       }
+
+      // Auto-promote `lang: "typescript"` → "tsx" when the user pointed at a
+      // single `.tsx` file. ast-grep's TS grammar cannot parse JSX, so this
+      // closes the silent-miss reported in issue #173. Per-file scope only:
+      // directory paths and other extensions are left untouched so existing
+      // behavior is preserved for mixed-extension trees.
+      let effectiveLang = p.lang;
+      if (p.lang === "typescript") {
+        try {
+          const st = await fsStat(searchPath);
+          if (st.isFile() && path.extname(searchPath).toLowerCase() === ".tsx") {
+            effectiveLang = "tsx";
+          }
+        } catch {
+          // Already handled by the prior fsStat block; fall through.
+        }
+      }
+      if (effectiveLang) args.push("-l", effectiveLang);
+      args.push(searchPath);
 
       try {
         const { stdout } = await execFileText("sg", args, {

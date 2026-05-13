@@ -8,7 +8,7 @@ import { readFile, stat } from "node:fs/promises";
 import type { FileMap, FileSymbol } from "../types.js";
 
 import { DetailLevel, SymbolKind } from "../enums.js";
-export const MAPPER_VERSION = 1;
+export const MAPPER_VERSION = 2;
 
 // Lazy load ts-morph to avoid startup cost when not needed
 let tsMorphModule: typeof import("ts-morph") | null = null;
@@ -143,19 +143,12 @@ function getVariableSignature(
     return cleanupSignature(typeNode.getText());
   }
 
-  let typeText = "";
-  try {
-    typeText = varDecl.getType().getText();
-  } catch {
-    typeText = "";
-  }
-  if (typeText.length > 100) {
-    return undefined;
-  }
-  if (!typeText) {
-    return undefined;
-  }
-  return cleanupSignature(typeText);
+  // No explicit type annotation and no callable initializer: do not emit a
+  // signature. ts-morph's inferred type text (e.g. literal types like `3`,
+  // `true`, `"hello"`) is not safe to concatenate onto the symbol name in the
+  // shared formatter, which assumes non-name-containing signatures are
+  // call-shaped. See issue #169 in this repo.
+  return undefined;
 }
 
 function getTypeSignature(
@@ -481,7 +474,7 @@ function extractSymbols(
   for (const varStatement of sourceFile.getVariableStatements()) {
     const statementDocstring = getDocstring(varStatement);
     for (const varDecl of varStatement.getDeclarations()) {
-      const signature = getVariableSignature(ts, varDecl) ?? varDecl.getName();
+      const signature = getVariableSignature(ts, varDecl);
       symbols.push({
         name: varDecl.getName(),
         kind: "variable",
