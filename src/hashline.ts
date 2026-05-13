@@ -693,6 +693,11 @@ export function applyHashlineEdits(
 				noopEdits.push({ editIndex: idx, loc: `${spec.after.line}:${spec.after.hash}`, currentContent: anchor });
 				continue;
 			}
+			if (content === "" && spec.after.line === 1 && anchor === "") {
+				fileLines.splice(0, 1, ...inserted);
+				track(1);
+				continue;
+			}
 			fileLines.splice(spec.after.line, 0, ...inserted);
 			track(spec.after.line + 1);
 		}

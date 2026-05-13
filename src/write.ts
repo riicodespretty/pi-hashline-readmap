@@ -12,7 +12,7 @@ import { formatFileMapWithBudget } from "./readmap/formatter.js";
 import { buildContextHygieneMetadata, buildFileResource, type ContextHygieneMetadata } from "./context-hygiene.js";
 import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { buildPendingWritePreviewData, buildWritePreviewKey, resolvePendingDiffPreview, type PendingDiffPreviewResult } from "./pending-diff-preview.js";
-import { generateCompactOrFullDiff, normalizeToLF } from "./edit-diff.js";
+import { generateCompactOrFullDiff, normalizeToLF, hasBareCarriageReturn } from "./edit-diff.js";
 import { buildDiffData, type DiffData } from "./diff-data.js";
 
 const WRITE_PENDING_PREVIEW_STATE_KEY = "hashline-write-pending-preview";
@@ -144,6 +144,30 @@ export async function executeWrite(opts: {
   await ensureHashInit();
 
   const { path: filePath, content, map: requestMap, cwd } = opts;
+  const warnings: string[] = [];
+  const ptcWarnings: PtcWarning[] = [];
+  const contextHygiene = buildContextHygieneMetadata({
+    tool: "write",
+    classification: "mutation",
+    resources: [buildFileResource(filePath)],
+  });
+
+  if (hasBareCarriageReturn(content)) {
+    const message = "File content contains bare CR (\\r) line endings; write refuses to emit anchors that read/edit would normalize differently.";
+    warnings.push(message);
+    ptcWarnings.push(buildPtcWarning("bare-cr", message));
+    return {
+      text: `Cannot write ${filePath}\n⚠️ ${message}`,
+      warnings,
+      ptcValue: {
+        tool: "write",
+        path: filePath,
+        lines: [],
+        warnings: ptcWarnings,
+      },
+      contextHygiene,
+    };
+  }
   const previousContent = readPreviousTextForDiff(filePath);
 
   // Create parent directories
@@ -161,13 +185,6 @@ export async function executeWrite(opts: {
     throw err;
   }
 
-  const warnings: string[] = [];
-  const ptcWarnings: PtcWarning[] = [];
-  const contextHygiene = buildContextHygieneMetadata({
-    tool: "write",
-    classification: "mutation",
-    resources: [buildFileResource(filePath)],
-  });
 
   // Binary detection
   if (looksLikeBinary(Buffer.from(content, "utf-8"))) {
@@ -321,6 +338,23 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
               ...result.ptcValue,
               ok: false,
               error: buildPtcError("binary-content", binaryWarning.message),
+            },
+            warnings: result.warnings,
+            contextHygiene: result.contextHygiene,
+          },
+        };
+      }
+
+      const bareCrWarning = result.ptcValue.warnings.find((w) => w.code === "bare-cr");
+      if (bareCrWarning) {
+        return {
+          content: [{ type: "text" as const, text: result.text }],
+          isError: true,
+          details: {
+            ptcValue: {
+              ...result.ptcValue,
+              ok: false,
+              error: buildPtcError("bare-cr", bareCrWarning.message),
             },
             warnings: result.warnings,
             contextHygiene: result.contextHygiene,
