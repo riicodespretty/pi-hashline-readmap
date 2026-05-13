@@ -6,8 +6,8 @@ import {
   DefaultResourceLoader,
   SessionManager,
   type ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
-import { registerFauxProvider } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import { registerFauxProvider } from "@earendil-works/pi-ai";
 
 type PromptMetadataResult = {
   systemPrompt: string;
