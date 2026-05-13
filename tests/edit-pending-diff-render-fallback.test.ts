@@ -21,7 +21,7 @@ const theme = {
 };
 
 describe("edit renderCall preview fallback", () => {
-	it("keeps the summary after a skipped preview", async () => {
+	it("projects first-occurrence replace preview and executes the same change", async () => {
 		const cwd = mkdtempSync(resolve(tmpdir(), "pi-edit-pending-fallback-"));
 		const filePath = resolve(cwd, "sample.ts");
 		writeFileSync(filePath, "const value = 1;\nconst value = 1;\n", "utf-8");
@@ -33,7 +33,7 @@ describe("edit renderCall preview fallback", () => {
 		await Promise.resolve();
 		const rendered = textOf(tool.renderCall(args, theme, context));
 		expect(rendered).toContain("edit");
-		expect(rendered).not.toContain("pending edit");
+		expect(rendered).toContain("pending edit");
 
 		const result = await tool.execute("edit-call", args, new AbortController().signal, undefined, { cwd });
 		expect(result.isError).not.toBe(true);

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { dirname, relative, resolve, sep } from "node:path";
-import { generateDiffString, normalizeToLF } from "./edit-diff.js";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { generateDiffString, normalizeToLF, replaceText } from "./edit-diff.js";
 import { applyHashlineEdits, type HashlineEditItem } from "./hashline.js";
 import { replaceSymbol } from "./replace-symbol.js";
 
@@ -31,14 +31,16 @@ function isInsidePath(parent: string, child: string): boolean {
 function resolveWorkspacePreviewPath(rawPath: unknown, cwd: string, allowMissing: boolean): { type: "ok"; path: string; existed: boolean } | { type: "skip"; reason: string } {
 	if (typeof rawPath !== "string" || rawPath.trim() === "") return { type: "skip", reason: "missing path" };
 	const workspace = realpathSync(cwd);
-	const requested = resolve(workspace, rawPath.replace(/^@/, ""));
+	const normalizedPath = rawPath.replace(/^@/, "");
+	const explicitAbsolute = isAbsolute(normalizedPath);
+	const requested = resolve(workspace, normalizedPath);
 	if (existsSync(requested)) {
 		const realTarget = realpathSync(requested);
-		if (!isInsidePath(workspace, realTarget)) return { type: "skip", reason: "path outside workspace" };
+		if (!explicitAbsolute && !isInsidePath(workspace, realTarget)) return { type: "skip", reason: "path outside workspace" };
 		return { type: "ok", path: realTarget, existed: true };
 	}
 
-	if (!isInsidePath(workspace, requested)) return { type: "skip", reason: "path outside workspace" };
+	if (!explicitAbsolute && !isInsidePath(workspace, requested)) return { type: "skip", reason: "path outside workspace" };
 
 	if (!allowMissing) return { type: "skip", reason: "file not found" };
 	const parent = dirname(requested);
@@ -76,7 +78,7 @@ function buildData(
 	};
 }
 
-type ReplaceEdit = { replace: { old_text: string; new_text: string } };
+type ReplaceEdit = { replace: { old_text: string; new_text: string; all?: boolean; fuzzy?: boolean } };
 type PendingEditInput = { path?: unknown; edits?: unknown[]; oldText?: unknown; newText?: unknown; old_text?: unknown; new_text?: unknown };
 
 function normalizeReplaceOnlyEdits(input: PendingEditInput): unknown[] {
@@ -130,24 +132,16 @@ async function applyReplaceSymbolPreview(filePath: string, content: string, edit
 	}
 }
 
-function countOccurrences(haystack: string, needle: string): number {
-	if (!needle.length) return 0;
-	let count = 0;
-	let offset = 0;
-	while (true) {
-		const idx = haystack.indexOf(needle, offset);
-		if (idx === -1) return count;
-		count++;
-		offset = idx + needle.length;
-	}
-}
 
 function applyReplacePreview(content: string, edit: ReplaceEdit): { type: "ok"; content: string } | { type: "skip"; reason: string } {
 	const { old_text, new_text } = edit.replace;
 	if (!old_text.length) return { type: "skip", reason: "replace old_text is empty" };
-	const matches = countOccurrences(content, old_text);
-	if (matches !== 1) return { type: "skip", reason: `replace old_text is not unique (${matches} matches)` };
-	return { type: "ok", content: content.replace(old_text, normalizeToLF(new_text)) };
+	const replacement = replaceText(content, old_text, new_text, {
+		all: edit.replace.all ?? false,
+		fuzzy: edit.replace.fuzzy ?? false,
+	});
+	if (!replacement.count) return { type: "skip", reason: "replace old_text was not found" };
+	return { type: "ok", content: replacement.content };
 }
 
 export function buildPendingWritePreviewData(input: { path?: unknown; content?: unknown }, cwd: string): PendingDiffPreviewResult {
