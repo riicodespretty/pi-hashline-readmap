@@ -17,6 +17,7 @@ import { validateSyntaxRegression } from "./edit-syntax-validate.js";
 import { resolveSyntaxValidateMode, type SyntaxValidateOptions } from "./syntax-validate-mode.js";
 import { replaceSymbol } from "./replace-symbol.js";
 import { buildEditPreviewKey, buildPendingEditPreviewData, resolvePendingDiffPreview, type PendingDiffPreviewResult } from "./pending-diff-preview.js";
+import { buildDiffData, type DiffBlockRange } from "./diff-data.js";
 
 const EDIT_PENDING_PREVIEW_STATE_KEY = "hashline-edit-pending-preview";
 
@@ -489,6 +490,18 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			}
 
 			const diffResult = generateCompactOrFullDiff(originalNormalized, result);
+			const blockRanges: DiffBlockRange[] = rsProbeResults.map((probe) => ({
+				kind: "remove" as const,
+				startLine: probe.range.start,
+				endLine: probe.range.end,
+			}));
+			const diffData = buildDiffData({
+				path: absolutePath,
+				oldContent: originalNormalized,
+				newContent: result,
+				diff: diffResult.diff,
+				...(blockRanges.length ? { blockRanges } : {}),
+			});
 			const warnings: string[] = [];
 			if (anchorResult.warnings?.length) warnings.push(...anchorResult.warnings);
 			if (legacyNormalizationWarning) warnings.push(legacyNormalizationWarning);
@@ -518,6 +531,7 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				path: absolutePath,
 				displayPath: path,
 				diff: diffResult.diff,
+				diffData,
 				firstChangedLine: anchorResult.firstChangedLine ?? diffResult.firstChangedLine,
 				warnings,
 				noopEdits: anchorResult.noopEdits ?? [],
@@ -530,16 +544,19 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				content: [{ type: "text", text: builtOutput.text }],
 				details: {
 					diff: diffResult.diff,
+					diffData,
 					firstChangedLine: anchorResult.firstChangedLine ?? diffResult.firstChangedLine,
 					ptcValue: builtOutput.ptcValue,
 					contextHygiene: builtOutput.contextHygiene,
 				} as EditToolDetails & {
+					diffData: typeof diffData;
 					ptcValue: {
 						tool: string;
 						ok: boolean;
 						path: string;
 						summary: string;
 						diff: string;
+						diffData: typeof diffData;
 						firstChangedLine: number | undefined;
 						warnings: string[];
 						noopEdits: unknown[];

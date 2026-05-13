@@ -73,3 +73,32 @@ Syntax validation runs before writing when supported:
 - `PI_HASHLINE_SYNTAX_VALIDATE` can set the default mode.
 
 Existing syntax errors are tolerated; the warning is for newly introduced parser errors.
+
+## Diff data contract
+
+Successful `edit` results include `details.diffData` and `details.ptcValue.diffData` in addition to the existing `details.diff` / `ptcValue.diff` string fields. The string fields remain the backward-compatible human-readable fallback.
+
+`diffData` is a stable versioned contract:
+
+```ts
+type DiffData = {
+  version: 1;
+  entries: Array<
+    | { kind: "context"; oldLine: number; newLine: number; text: string }
+    | { kind: "add"; newLine: number; text: string }
+    | { kind: "remove"; oldLine: number; text: string }
+    | { kind: "meta"; text: string }
+  >;
+  stats: { added: number; removed: number; context: number };
+  language?: string;
+  blockRanges?: Array<{ kind: "add" | "remove"; startLine: number; endLine: number }>;
+  inlineDiffs?: Array<{
+    removeLineIndex: number;
+    addLineIndex: number;
+    removeSpans: Array<{ kind: "equal" | "remove" | "add"; text: string }>;
+    addSpans: Array<{ kind: "equal" | "remove" | "add"; text: string }>;
+  }>;
+};
+```
+
+For compact one-line hashline diffs, `details.diff` remains compact, while `diffData.entries` uses expanded remove/add rows so renderers can show inline word changes without breaking hashline output.
