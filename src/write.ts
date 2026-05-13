@@ -1,7 +1,7 @@
 import { withFileMutationQueue, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative } from "node:path";
 import { resolveToCwd } from "./path-utils.js";
 import { ensureHashInit, formatHashlineDisplay } from "./hashline.js";
@@ -12,6 +12,8 @@ import { formatFileMapWithBudget } from "./readmap/formatter.js";
 import { buildContextHygieneMetadata, buildFileResource, type ContextHygieneMetadata } from "./context-hygiene.js";
 import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { buildPendingWritePreviewData, buildWritePreviewKey, resolvePendingDiffPreview, type PendingDiffPreviewResult } from "./pending-diff-preview.js";
+import { generateCompactOrFullDiff, normalizeToLF } from "./edit-diff.js";
+import { buildDiffData, type DiffData } from "./diff-data.js";
 
 const WRITE_PENDING_PREVIEW_STATE_KEY = "hashline-write-pending-preview";
 
@@ -33,7 +35,12 @@ const WRITE_PROMPT_METADATA = defineToolPromptMetadata({
   ],
 });
 
-export interface WriteResult {
+type WriteDiffFields = {
+  diff?: string;
+  diffData?: DiffData;
+};
+
+export interface WriteResult extends WriteDiffFields {
   text: string;
   warnings: string[];
   ptcValue: {
@@ -41,9 +48,35 @@ export interface WriteResult {
     path: string;
     lines: PtcLine[];
     warnings: PtcWarning[];
+    diff?: string;
+    diffData?: DiffData;
     map?: { appended: boolean };
   };
   contextHygiene: ContextHygieneMetadata;
+}
+
+function readPreviousTextForDiff(filePath: string): string {
+  try {
+    if (!existsSync(filePath)) return "";
+    const previous = readFileSync(filePath);
+    if (looksLikeBinary(previous)) return "";
+    return previous.toString("utf-8");
+  } catch {
+    return "";
+  }
+}
+
+function generateWriteDiff(previousContent: string, nextContent: string): { diff: string; firstChangedLine: number | undefined } {
+  if (previousContent !== "") return generateCompactOrFullDiff(previousContent, nextContent);
+  const normalizedNext = normalizeToLF(nextContent);
+  if (normalizedNext === "") return { diff: "", firstChangedLine: undefined };
+  const lines = normalizedNext.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  const width = String(lines.length).length;
+  return {
+    diff: lines.map((line, index) => `+${String(index + 1).padStart(width, " ")} ${line}`).join("\n"),
+    firstChangedLine: 1,
+  };
 }
 
 export interface WriteToolOptions {
@@ -111,6 +144,7 @@ export async function executeWrite(opts: {
   await ensureHashInit();
 
   const { path: filePath, content, map: requestMap, cwd } = opts;
+  const previousContent = readPreviousTextForDiff(filePath);
 
   // Create parent directories
   try {
@@ -193,15 +227,28 @@ export async function executeWrite(opts: {
   }
 
   const displayPath = cwd ? relative(cwd, filePath) || filePath : filePath;
+  const normalizedPrevious = normalizeToLF(previousContent);
+  const normalizedNext = normalizeToLF(content);
+  const diffResult = generateWriteDiff(normalizedPrevious, normalizedNext);
+  const diffData = buildDiffData({
+    path: filePath,
+    oldContent: normalizedPrevious,
+    newContent: normalizedNext,
+    diff: diffResult.diff,
+  });
 
   return {
     text,
     warnings,
+    diff: diffResult.diff,
+    diffData,
     ptcValue: {
       tool: "write",
       path: displayPath,
       lines: ptcLines,
       warnings: ptcWarnings,
+      diff: diffResult.diff,
+      diffData,
       ...(requestMap !== undefined ? { map: { appended: mapAppended } } : {}),
     },
     contextHygiene,
@@ -284,6 +331,8 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       return {
         content: [{ type: "text" as const, text: result.text }],
         details: {
+          ...(result.diff !== undefined ? { diff: result.diff } : {}),
+          ...(result.diffData !== undefined ? { diffData: result.diffData } : {}),
           ptcValue: result.ptcValue,
           warnings: result.warnings,
           contextHygiene: result.contextHygiene,

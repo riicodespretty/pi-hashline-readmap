@@ -1,4 +1,5 @@
 import { computeLineHash, escapeControlCharsForDisplay } from "./hashline.js";
+import type { DiffData } from "./diff-data.js";
 
 export interface PtcLine {
   line: number;
@@ -53,6 +54,7 @@ export interface PtcEditResult {
   path: string;
   summary: string;
   diff: string;
+  diffData?: DiffData;
   firstChangedLine: number | undefined;
   warnings: string[];
   noopEdits: unknown[];
@@ -121,6 +123,7 @@ export function buildPtcEditResult(input: {
   path: string;
   summary: string;
   diff: string;
+  diffData?: DiffData;
   firstChangedLine: number | undefined;
   warnings: string[];
   noopEdits: unknown[];
@@ -132,6 +135,7 @@ export function buildPtcEditResult(input: {
     path: input.path,
     summary: input.summary,
     diff: input.diff,
+    ...(input.diffData ? { diffData: input.diffData } : {}),
     firstChangedLine: input.firstChangedLine,
     warnings: [...input.warnings],
     noopEdits: [...input.noopEdits],

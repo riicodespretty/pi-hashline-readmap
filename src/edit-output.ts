@@ -1,10 +1,12 @@
 import { countEditTypes, parseDiffStats } from "./edit-render-helpers.js";
 import { buildPtcEditResult, type SemanticSummary } from "./ptc-value.js";
 import { buildContextHygieneMetadata, buildFileResource, type ContextHygieneMetadata } from "./context-hygiene.js";
+import type { DiffData } from "./diff-data.js";
 export interface BuildEditOutputInput {
   path: string;
   displayPath: string;
   diff: string;
+  diffData?: DiffData;
   firstChangedLine: number | undefined;
   warnings: string[];
   noopEdits: unknown[];
@@ -77,6 +79,7 @@ export function buildEditOutput(input: BuildEditOutputInput): EditOutputResult {
       path: input.path,
       summary,
       diff: input.diff,
+      ...(input.diffData ? { diffData: input.diffData } : {}),
       firstChangedLine: input.firstChangedLine,
       warnings: input.warnings,
       noopEdits: input.noopEdits,
