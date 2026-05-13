@@ -26,9 +26,19 @@ function getVisibleDiffStats(diff: string): { added: number; removed: number } {
   return { added: 1, removed: 1 };
 }
 function buildVisibleSummary(displayPath: string, diff: string, edits: unknown[] | undefined): string {
-  const stats = getVisibleDiffStats(diff);
+  let stats = getVisibleDiffStats(diff);
   const counts = countEditTypes(edits);
   const editCount = counts.total || 1;
+
+  if (
+    counts.total > 0 &&
+    counts.insert_after === counts.total &&
+    stats.removed > 0 &&
+    stats.added === stats.removed + counts.insert_after
+  ) {
+    stats = { added: counts.insert_after, removed: 0 };
+  }
+
   const changeWord = editCount === 1 ? "change" : "changes";
   const changedLineCount = Math.max(stats.added, stats.removed);
   const lineWord = changedLineCount === 1 ? "line" : "lines";

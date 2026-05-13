@@ -56,6 +56,10 @@ const hashlineEditItemSchema = Type.Union([
 		{ replace_symbol: Type.Object({ symbol: Type.String(), new_body: Type.String() }) },
 		{ additionalProperties: true },
 	),
+	Type.Object(
+		{ old_text: Type.String(), new_text: Type.String() },
+		{ additionalProperties: true },
+	),
 ]);
 
 const hashlineEditSchema = Type.Object(
