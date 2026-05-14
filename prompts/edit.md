@@ -33,6 +33,12 @@ Prefer `set_line`, `replace_lines`, and `insert_after`: they verify the file sti
 
 Use only the variant(s) needed for the task; the example shows all shapes together for reference. Each `edits[]` entry must contain exactly one variant key. `new_text` / `new_body` is plain file content — no hash prefixes or diff markers.
 
+## Optional post-edit verification
+
+`postEditVerify: true` opts into post-write persisted-content verification for this one call. It is default off: when omitted or false, successful edits use the normal fast path and do not perform an extra read-back check.
+
+When enabled, `edit` first runs the normal validation and write path. Only after the write succeeds, it reads the file back from disk and compares the persisted content to the exact intended content, including BOM restoration and original line-ending restoration. This is not syntax validation; syntax validation is the separate pre-write `syntaxValidate` / `PI_HASHLINE_SYNTAX_VALIDATE` guard described below.
+
 ## `replace_symbol`
 
 Use `replace_symbol` to replace one function, class, method, interface, type, enum, or similar symbol. Query symbols like `read symbol:`: `Name`, `Class.method`, or `Name@<line>`.
