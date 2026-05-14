@@ -79,6 +79,14 @@ Why they happen:
 
 These warnings will go away once `tree-sitter-cpp` / `tree-sitter-java` widen their peer ranges upstream; the `overrides` block can then be removed too.
 
+### Bash output contract
+
+The `bash` tool exposes a stable, documented public contract on its result
+`details` (notably `details.rtkCompaction` for RTK compaction metadata,
+mirrored under `details.ptcValue.rtkCompaction`). Display extensions and
+downstream consumers should rely on that contract rather than on internal
+fields. See [`prompts/bash.md`](prompts/bash.md) for the full schema.
+
 ## 30-second example
 
 The core workflow is: read a file, copy a `LINE:HASH` anchor, and edit against that verified anchor.
