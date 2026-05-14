@@ -14,13 +14,18 @@ import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { buildPendingWritePreviewData, buildWritePreviewKey, resolvePendingDiffPreview, type PendingDiffPreviewResult } from "./pending-diff-preview.js";
 import { generateCompactOrFullDiff, normalizeToLF, hasBareCarriageReturn } from "./edit-diff.js";
 import { buildDiffData, type DiffData } from "./diff-data.js";
+import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
+import { renderTuiDiff } from "./tui-diff-renderer.js";
 
 const WRITE_PENDING_PREVIEW_STATE_KEY = "hashline-write-pending-preview";
 
-function formatPendingWritePreviewText(summary: string, preview: PendingDiffPreviewResult | undefined): string {
-	if (!preview || preview.type !== "ok") return summary;
-	const diff = preview.data.diff ? `\n${preview.data.diff}` : "";
-	return `${summary}\n${preview.data.headerLabel}${diff}`;
+function formatPendingWritePreviewText(summary: string, preview: PendingDiffPreviewResult | undefined, theme: any, width: number | undefined): string {
+  if (!preview || preview.type !== "ok") return width === undefined ? summary : clampLinesToWidth(summary.split("\n"), width).join("\n");
+  const diffWidth = width ?? 80;
+  const diffData = buildDiffData({ path: preview.data.filePath, oldContent: preview.data.previousContent, newContent: preview.data.nextContent, diff: preview.data.diff });
+  const diffLines = renderTuiDiff({ diffData, width: diffWidth, theme, expanded: true }).lines;
+  const lines = [summary, summaryLine(preview.data.headerLabel), ...diffLines];
+  return width === undefined ? lines.join("\n") : clampLinesToWidth(lines, width).join("\n");
 }
 
 const MAX_LINES = 2000;
@@ -43,6 +48,7 @@ type WriteDiffFields = {
 export interface WriteResult extends WriteDiffFields {
   text: string;
   warnings: string[];
+  writeState?: "created" | "overwritten";
   ptcValue: {
     tool: "write";
     path: string;
@@ -169,6 +175,7 @@ export async function executeWrite(opts: {
     };
   }
   const previousContent = readPreviousTextForDiff(filePath);
+  const existedBeforeWrite = existsSync(filePath);
 
   // Create parent directories
   try {
@@ -257,6 +264,7 @@ export async function executeWrite(opts: {
   return {
     text,
     warnings,
+    writeState: existedBeforeWrite ? "overwritten" : "created",
     diff: diffResult.diff,
     diffData,
     ptcValue: {
@@ -367,6 +375,7 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
         details: {
           ...(result.diff !== undefined ? { diff: result.diff } : {}),
           ...(result.diffData !== undefined ? { diffData: result.diffData } : {}),
+          ...(result.writeState ? { writeState: result.writeState } : {}),
           ptcValue: result.ptcValue,
           warnings: result.warnings,
           contextHygiene: result.contextHygiene,
@@ -375,28 +384,33 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       });
     },
     renderCall(args: any, theme: any, context: any = {}) {
-      const { path } = args as { path: string };
-      const label = theme.fg("toolTitle", "✏️ write");
-      let text = `${label} ${theme.fg("muted", path)}`;
+      const { path, content } = args as { path: string; content?: string };
+      const label = renderToolLabel(theme, "write");
+      const lineCount = typeof content === "string" ? content.split("\n").length : 0;
+      const bytes = typeof content === "string" ? Buffer.byteLength(content, "utf8") : 0;
+      let text = clampLineToWidth(`${label} ${theme.fg("muted", path)}${typeof content === "string" ? ` (${lineCount} ${lineCount === 1 ? "line" : "lines"} • ${bytes} B)` : ""}`, context.width);
       const previewKey = buildWritePreviewKey(args ?? {});
-      const preview = resolvePendingDiffPreview(
-        context,
-        WRITE_PENDING_PREVIEW_STATE_KEY,
-        previewKey,
-        () => buildPendingWritePreviewData(args ?? {}, context.cwd ?? process.cwd()),
-      );
-      text = formatPendingWritePreviewText(text, preview);
+      const preview = resolvePendingDiffPreview(context, WRITE_PENDING_PREVIEW_STATE_KEY, previewKey, () => buildPendingWritePreviewData(args ?? {}, context.cwd ?? process.cwd()));
+      text = formatPendingWritePreviewText(text, preview, theme, context.width);
       const component = context.lastComponent ?? new Text("", 0, 0);
       component.setText(text);
       return component;
     },
-    renderResult(result: any, _options: any, theme: any) {
-      const output = result.content[0]?.type === "text"
-        ? (result.content[0] as { type: "text"; text: string }).text
-        : "";
-      const lineCount = output.split("\n").filter((l: string) => /^\d+:[0-9a-f]{3}\|/.test(l)).length;
-      const summary = lineCount > 0 ? `${lineCount} lines written` : "written";
-      return new Text(theme.fg("toolOutput", summary), 0, 0);
+    renderResult(result: any, options: any, theme: any, context: any = {}) {
+      const expanded = isRendererExpanded(options, context);
+      const width = context.width ?? options?.width;
+      const details = result.details ?? {};
+      const output = result.content?.[0]?.type === "text" ? result.content[0].text : "";
+      if (result.isError || details.ptcValue?.ok === false) {
+        const firstLine = output.split("\n")[0] || "write failed";
+        const body = expanded && output ? output : firstLine;
+        return new Text(clampLinesToWidth(summaryLine(body).split("\n"), width).join("\n"), 0, 0);
+      }
+      const diffData = details.diffData;
+      const state = details.writeState === "overwritten" ? "overwritten" : "created";
+      let text = summaryLine(state, { hidden: !!diffData && !expanded });
+      if (expanded && diffData) text += "\n" + renderTuiDiff({ diffData, width, theme, expanded: true }).lines.join("\n");
+      return new Text(clampLinesToWidth(text.split("\n"), width).join("\n"), 0, 0);
     },
   };
   pi.registerTool(tool);

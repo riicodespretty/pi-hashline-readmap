@@ -12,6 +12,7 @@ import { resolveToCwd } from "./path-utils.js";
 import type { FileSymbol } from "./readmap/types.js";
 import { buildSgOutput } from "./sg-output.js";
 import { buildAstSearchRehydrateDescriptor, isContextHygieneDebugEnabled } from "./context-hygiene.js";
+import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
 
 type SgParams = { pattern: string; lang?: string; path?: string };
 const CONTEXT_HYGIENE_SG_SYMBOL_FILE_CAP = 20;
@@ -383,60 +384,50 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
       }
     },
     renderCall(args: any, theme: any, ...rest: any[]) {
-      const _context = rest[0];
-      let text = theme.fg("toolTitle", theme.bold("ast_search "));
-      text += theme.fg("accent", args.pattern);
-      if (args.lang) {
-        text += theme.fg("dim", ` (${args.lang})`);
-      }
-      if (args.path && args.path !== ".") {
-        text += theme.fg("dim", ` ${args.path}`);
-      }
-      return new Text(text, 0, 0);
+      const context = rest[0] ?? {};
+      let text = `${renderToolLabel(theme, "ast_search")} ${theme.fg("accent", `/${args.pattern}/`)}`;
+      text += theme.fg("dim", ` in ${args.path ?? "."}`);
+      if (args.lang) text += theme.fg("dim", ` (${args.lang})`);
+      return new Text(clampLineToWidth(text, context.width), 0, 0);
     },
     renderResult(result: any, options: ToolRenderResultOptions, theme: any, ...rest: any[]) {
-      const context: { isPartial?: boolean; isError?: boolean; expanded?: boolean; cwd?: string } =
+      const context: { isPartial?: boolean; isError?: boolean; expanded?: boolean; cwd?: string; width?: number } =
         rest[0] ?? options ?? {};
       // In older pi versions, options has expanded/isPartial directly.
       // In newer pi versions, context (4th arg) has expanded/isPartial/isError.
       const isPartial = context.isPartial ?? (options as any)?.isPartial ?? false;
       const isError = context.isError ?? false;
-      const expanded = context.expanded ?? (options as any)?.expanded ?? false;
+      const expanded = isRendererExpanded(options as any, context as any);
       const cwd = context.cwd ?? process.cwd();
+      const width = (context as any).width ?? (options as any)?.width;
 
-      if (isPartial) return new Text(theme.fg("warning", "Searching\u2026"), 0, 0);
+      if (isPartial) return new Text(clampLinesToWidth([summaryLine("pending search")], width).join("\n"), 0, 0);
 
       const content = result.content?.[0];
       const textContent = content?.type === "text" ? content.text : "";
       if (isError || result.isError) {
         const firstLine = textContent.split("\n")[0] || "Error";
-        return new Text(theme.fg("error", firstLine), 0, 0);
+        const body = expanded && textContent ? textContent : firstLine;
+        return new Text(clampLinesToWidth(summaryLine(body).split("\n"), width).join("\n"), 0, 0);
       }
       const ptcValue = (result.details as any)?.ptcValue as
         | { tool: "ast_search"; files: Array<{ path: string; lines: any[] }> }
         | undefined;
       const files = ptcValue?.files ?? [];
-      if (files.length === 0) {
-        return new Text(theme.fg("muted", "No matches"), 0, 0);
-      }
+      if (files.length === 0) return new Text(summaryLine("no matches"), 0, 0);
       const fileCount = files.length;
       const totalMatches = files.reduce((sum: number, f: any) => sum + f.lines.length, 0);
       const matchWord = totalMatches === 1 ? "match" : "matches";
       const fileWord = fileCount === 1 ? "file" : "files";
-      let text = theme.fg("success", `\u2713 ${totalMatches} ${matchWord} in ${fileCount} ${fileWord}`);
-
+      let text = summaryLine(`${totalMatches} ${matchWord} in ${fileCount} ${fileWord}`, { hidden: files.length > 0 && !expanded });
       if (expanded) {
-        const showFiles = files.slice(0, 20);
-        for (const file of showFiles) {
+        for (const file of files.slice(0, 20)) {
           const display = path.relative(cwd, file.path) || file.path;
           text += "\n" + theme.fg("dim", `  ${display} (${file.lines.length})`);
         }
-        if (files.length > 20) {
-          text += "\n" + theme.fg("muted", `  \u2026 and ${files.length - 20} more files`);
-        }
+        if (files.length > 20) text += "\n" + theme.fg("muted", `  … and ${files.length - 20} more files`);
       }
-
-      return new Text(text, 0, 0);
+      return new Text(clampLinesToWidth(text.split("\n"), width).join("\n"), 0, 0);
     },
   } satisfies Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof ptc };
 

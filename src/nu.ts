@@ -9,6 +9,7 @@ import { randomBytes } from "node:crypto";
 import { buildPtcError } from "./ptc-value.js";
 import { stripAnsi } from "./rtk/ansi.js";
 import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
+import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
 
 const MAX_LINES = 2000;
 const MAX_BYTES = 50 * 1024; // 50 KB
@@ -385,22 +386,26 @@ export function registerNuTool(pi: ExtensionAPI): NuToolDefinition | false {
         },
       };
     },
-    renderCall(args: any, theme: any) {
+    renderCall(args: any, theme: any, context: any = {}) {
       const { command } = args as { command: string };
-      const label = theme.fg("toolTitle", "🐚 nushell");
       const firstLine = command.split("\n")[0];
       const preview = firstLine + (command.includes("\n") ? " …" : "");
-      const full = command.includes("\n")
-        ? "\n" + theme.fg("muted", command)
-        : "";
-      return new Text(`${label} ${theme.fg("muted", preview)}${full}`, 0, 0);
+      return new Text(clampLineToWidth(`${renderToolLabel(theme, "nu")} ${theme.fg("muted", preview)}`, context.width), 0, 0);
     },
-    renderResult(result, _options, theme) {
-      const output =
-        result.content[0]?.type === "text"
-          ? (result.content[0] as { type: "text"; text: string }).text
-          : "";
-      return new Text(theme.fg("toolOutput", output), 0, 0);
+    renderResult(result: any, options: any, theme: any, context: any = {}) {
+      const expanded = isRendererExpanded(options, context);
+      const width = context.width ?? options?.width;
+      const output = result.content[0]?.type === "text" ? (result.content[0] as { type: "text"; text: string }).text : "";
+      if (result.isError || context.isError) {
+        const firstLine = output.split("\n")[0] || "command failed";
+        const body = expanded && output ? output : firstLine;
+        return new Text(clampLinesToWidth(summaryLine(body).split("\n"), width).join("\n"), 0, 0);
+      }
+      if (!output.trim()) return new Text(summaryLine("command completed (no output)"), 0, 0);
+      const lineCount = output.split("\n").filter(Boolean).length;
+      let text = summaryLine(`${lineCount} ${lineCount === 1 ? "line" : "lines"} returned`, { hidden: !expanded });
+      if (expanded) text += `\n${output}`;
+      return new Text(clampLinesToWidth(text.split("\n"), width).join("\n"), 0, 0);
     },
   } satisfies NuToolDefinition;
   pi.registerTool(tool);

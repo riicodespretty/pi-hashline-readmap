@@ -6,6 +6,7 @@ import { readdir, stat } from "node:fs/promises";
 import { resolveToCwd } from "./path-utils.js";
 import { buildPtcError } from "./ptc-value.js";
 import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
+import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
 
 const MAX_BYTES = 50 * 1024; // 50 KB
 const DEFAULT_LIMIT = 500;
@@ -261,19 +262,26 @@ export function registerLsTool(pi: ExtensionAPI) {
       };
     },
 
-    renderCall(args: any, theme: any) {
+    renderCall(args: any, theme: any, context: any = {}) {
       const { path } = args as { path?: string };
-      const label = theme.fg("toolTitle", "📁 ls");
-      const target = path ?? ".";
-      return new Text(`${label} ${theme.fg("muted", target)}`, 0, 0);
+      return new Text(clampLineToWidth(`${renderToolLabel(theme, "ls")} ${theme.fg("muted", path ?? ".")}`, context.width), 0, 0);
     },
 
-    renderResult(result: any, _options: any, theme: any) {
-      const output =
-        result.content[0]?.type === "text"
-          ? (result.content[0] as { type: "text"; text: string }).text
-          : "";
-      return new Text(theme.fg("toolOutput", output), 0, 0);
+    renderResult(result: any, options: any, theme: any, context: any = {}) {
+      const expanded = isRendererExpanded(options, context);
+      const width = context.width ?? options?.width;
+      const output = result.content[0]?.type === "text" ? (result.content[0] as { type: "text"; text: string }).text : "";
+      if (result.isError || context.isError) {
+        const firstLine = output.split("\n")[0] || "error";
+        const body = expanded && output ? output : firstLine;
+        return new Text(clampLinesToWidth(summaryLine(body).split("\n"), width).join("\n"), 0, 0);
+      }
+      const ptcValue = result.details?.ptcValue as { totalEntries?: number } | undefined;
+      const total = ptcValue?.totalEntries ?? output.split("\n").filter(Boolean).length;
+      if (total === 0) return new Text(summaryLine("no entries"), 0, 0);
+      let text = summaryLine(`${total} ${total === 1 ? "entry" : "entries"} returned`, { hidden: !!output && !expanded });
+      if (expanded && output) text += `\n${output}`;
+      return new Text(clampLinesToWidth(text.split("\n"), width).join("\n"), 0, 0);
     },
   };
 

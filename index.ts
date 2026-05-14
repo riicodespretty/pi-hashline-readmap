@@ -7,6 +7,7 @@ import { registerNuTool } from "./src/nu.js";
 import { registerWriteTool } from "./src/write.js";
 import { registerLsTool } from "./src/ls.js";
 import { registerFindTool } from "./src/find.js";
+import { registerBashRendererTool } from "./src/bash-renderer.js";
 import { filterBashOutput } from "./src/rtk/bash-filter.js";
 import { ensureBashOriginalOutputSnapshot, selectBashOriginalOutput } from "./src/rtk/bash-original-output.js";
 import { applyBashContextGuard, resolveBashContextGuardConfig, type BashContextGuardConfig } from "./src/rtk/bash-context-guard.js";
@@ -205,6 +206,7 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   const writeTool = registerWriteTool(pi, { onFileAnchored: noteRead });
   const lsTool = registerLsTool(pi);
   const findTool = registerFindTool(pi);
+  registerBashRendererTool(pi, { cwd: process.cwd() });
   const contextHygieneDebugTool = registerContextHygieneDebugTool(pi);
   const toolExecutors = {
     read: readTool,

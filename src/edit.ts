@@ -1,4 +1,4 @@
-import { renderDiff, withFileMutationQueue, type ExtensionAPI, type EditToolDetails, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import { withFileMutationQueue, type ExtensionAPI, type EditToolDetails, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import type { Static } from "@sinclair/typebox";
 import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
@@ -12,19 +12,22 @@ import { classifyEdit, isDifftAvailable, runDifftastic } from "./edit-classify.j
 import type { SemanticSummary } from "./ptc-value.js";
 import { buildPtcError } from "./ptc-value.js";
 import { Text } from "@earendil-works/pi-tui";
-import { formatEditCallText, formatEditResultText } from "./edit-render-helpers.js";
+import { countEditTypes, formatEditCallText, formatEditResultText } from "./edit-render-helpers.js";
 import { validateSyntaxRegression } from "./edit-syntax-validate.js";
 import { resolveSyntaxValidateMode, type SyntaxValidateOptions } from "./syntax-validate-mode.js";
 import { replaceSymbol } from "./replace-symbol.js";
 import { buildEditPreviewKey, buildPendingEditPreviewData, resolvePendingDiffPreview, type PendingDiffPreviewResult } from "./pending-diff-preview.js";
 import { buildDiffData, type DiffBlockRange } from "./diff-data.js";
+import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, summaryLine } from "./tui-render-utils.js";
+import { renderTuiDiff } from "./tui-diff-renderer.js";
 
 const EDIT_PENDING_PREVIEW_STATE_KEY = "hashline-edit-pending-preview";
 
-function formatPendingPreviewText(summary: string, preview: PendingDiffPreviewResult | undefined): string {
-	if (!preview || preview.type !== "ok") return summary;
-	const diff = preview.data.diff ? `\n${preview.data.diff}` : "";
-	return `${summary}\n${preview.data.headerLabel}${diff}`;
+function formatPendingPreviewText(summary: string, preview: PendingDiffPreviewResult | undefined, theme: any, width = 80): string {
+	if (!preview || preview.type !== "ok") return clampLinesToWidth(summary.split("\n"), width).join("\n");
+	const diffData = buildDiffData({ path: preview.data.filePath, oldContent: preview.data.previousContent, newContent: preview.data.nextContent, diff: preview.data.diff });
+	const text = `${summary}\n${summaryLine(preview.data.headerLabel)}\n${renderTuiDiff({ diffData, width, theme, expanded: true }).lines.join("\n")}`;
+	return clampLinesToWidth(text.split("\n"), width).join("\n");
 }
 
 export function wrapWriteError(err: any, path: string): Error {
@@ -570,15 +573,20 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			});
 		},
 		renderCall(args: any, theme: any, ...rest: any[]) {
-			const context: { argsComplete?: boolean; lastComponent?: any; cwd?: string; state?: Record<string, any>; invalidate?: () => void } = rest[0] ?? {};
+			const context: { argsComplete?: boolean; lastComponent?: any; cwd?: string; state?: Record<string, any>; invalidate?: () => void; width?: number } = rest[0] ?? {};
 			const argsComplete = context.argsComplete ?? false;
 			const { path: filePath, suffix } = formatEditCallText(args, argsComplete);
 
 			let text = theme.fg("toolTitle", theme.bold("edit"));
 			if (filePath) text += ` ${theme.fg("accent", filePath)}`;
 			else text += ` ${theme.fg("toolOutput", "...")}`;
-			if (suffix) text += ` ${theme.fg("dim", suffix)}`;
-
+			const counts = Array.isArray(args?.edits) ? countEditTypes(args.edits) : undefined;
+			if (counts && counts.total > 0) {
+				text += ` ${theme.fg("dim", `(${counts.total} ${counts.total === 1 ? "edit" : "edits"})`)}`;
+			} else if (suffix) {
+				text += ` ${theme.fg("dim", suffix)}`;
+			}
+			text = clampLineToWidth(text, context.width);
 			const previewKey = buildEditPreviewKey(args ?? {});
 			const preview = resolvePendingDiffPreview(
 				context,
@@ -586,21 +594,20 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				previewKey,
 				() => buildPendingEditPreviewData(args ?? {}, context.cwd ?? process.cwd()),
 			);
-			text = formatPendingPreviewText(text, preview);
-
+			text = formatPendingPreviewText(text, preview, theme, context.width);
 			const component = context.lastComponent ?? new Text("", 0, 0);
 			component.setText(text);
 			return component;
 		},
-		renderResult(result: any, options: ToolRenderResultOptions, theme: any, ...rest: any[]) {
-			const context: { isPartial?: boolean; isError?: boolean; expanded?: boolean; lastComponent?: any } =
+			renderResult(result: any, options: ToolRenderResultOptions, theme: any, ...rest: any[]) {
+			const context: { isPartial?: boolean; isError?: boolean; expanded?: boolean; lastComponent?: any; width?: number } =
 				rest[0] ?? options ?? {};
 			const isPartial = context.isPartial ?? (options as any)?.isPartial ?? false;
 			const isError = context.isError ?? false;
-			const expanded = context.expanded ?? (options as any)?.expanded ?? false;
 
 			if (isPartial) {
-				return new Text(theme.fg("dim", "Editing\u2026"), 0, 0);
+				const width = (context as any).width ?? (options as any)?.width;
+				return new Text(clampLinesToWidth([summaryLine("pending edit")], width).join("\n"), 0, 0);
 			}
 
 			// Extract data from result
@@ -627,52 +634,26 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				semanticClassification: semanticClassification as any,
 			});
 
-			// Build display text
+			const expanded = isRendererExpanded(options as any, context as any);
+			const width = (context as any).width ?? (options as any)?.width;
+			const diffData = (details as any).diffData;
+			const stats = diffData?.stats ?? { added: 0, removed: 0 };
 			let text = "";
 
 			if (info.noOp) {
-				// No-op error
-				text = theme.fg("warning", "\u26a0 no-op");
-				if (expanded && info.errorText) {
-					text += `\n${theme.fg("error", info.errorText)}`;
-				}
+				text = summaryLine("no-op");
+				if (expanded && info.errorText) text += `\n${theme.fg("error", info.errorText)}`;
 			} else if (info.errorText) {
-				// Non-noop error
 				const firstLine = info.errorText.split("\n")[0] || "Error";
-				text = theme.fg("error", firstLine);
-				if (expanded && info.errorText.includes("\n")) {
-					text = theme.fg("error", info.errorText);
-				}
+				text = summaryLine(expanded ? info.errorText : firstLine);
 			} else {
-				// Success
-				const parts: string[] = [];
-				if (info.diffStats) {
-					parts.push(theme.fg("success", info.diffStats));
-				}
-				if (info.warningsBadge) {
-					parts.push(theme.fg("warning", info.warningsBadge));
-				}
-				if (info.semanticBadge) {
-					parts.push(theme.fg("dim", info.semanticBadge));
-				}
-				text = parts.join("  ") || theme.fg("success", "\u2713");
-
-				if (expanded) {
-					if (diff) {
-						text += `\n${renderDiff(diff)}`;
-					}
-					if (warnings.length > 0) {
-						text += `\n${theme.fg("warning", "Warnings:")}`;
-						for (const w of warnings) {
-							text += `\n  ${theme.fg("dim", w)}`;
-						}
-					}
-				}
+				const badges: string[] = [`edited +${stats.added} -${stats.removed}`];
+				if (info.semanticBadge) badges.push(info.semanticBadge.replace(/^✓\s*/, ""));
+				if (info.warningsBadge) badges.push(info.warningsBadge);
+				text = summaryLine(badges.join(" • "), { hidden: !!diffData && !expanded });
+				if (expanded && diffData) text += "\n" + renderTuiDiff({ diffData, width, theme, expanded: true }).lines.join("\n");
 			}
-
-			const component = context.lastComponent ?? new Text("", 0, 0);
-			component.setText(text);
-			return component;
+			return new Text(clampLinesToWidth(text.split("\n"), width).join("\n"), 0, 0);
 		},
 	} satisfies Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof ptc };
 
