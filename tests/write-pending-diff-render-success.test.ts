@@ -30,8 +30,9 @@ describe("write renderCall pending diff preview", () => {
 		const rendered = tool.renderCall({ path: "sample.txt", content: "new value\n" }, theme, context);
 		const text = textOf(rendered);
 
-		expect(text).toContain("pending overwrite");
-		expect(text).toContain("-1 old value");
-		expect(text).toContain("+1 new value");
+		expect(text).toContain("↳ pending overwrite");
+		expect(text).toContain("↳ diff +1 -1");
+		expect(text).toContain("▌ 1 │ old value");
+		expect(text).toContain("▌ 1 │ new value");
 	});
 });

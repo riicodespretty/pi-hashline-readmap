@@ -1,0 +1,56 @@
+import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { registerEditTool } from "../src/edit.js";
+
+const theme = { fg: (_: string, text: string) => text, bold: (text: string) => text };
+function textOf(component: any): string { return component?.text ?? component?.render?.(120)?.join("\n") ?? ""; }
+function tool(): any { let registered: any; registerEditTool({ registerTool(def: any) { registered = def; } } as any, { wasReadInSession: () => true } as any); return registered; }
+
+describe("edit TUI renderer", () => {
+  it("shows edit summary before final diff and preserves model-facing data", () => {
+    const result: any = { content: [{ type: "text", text: "1:abc|one\n2:def|TWO" }], details: { diff: "-2 two\n+2 TWO", diffData: { version: 1, stats: { added: 1, removed: 1, context: 0 }, entries: [{ kind: "remove", oldLine: 2, text: "two" }, { kind: "add", newLine: 2, text: "TWO" }] }, ptcValue: { warnings: [], noopEdits: [], semanticSummary: { classification: "semantic" }, diffData: { sentinel: true } } } };
+    const before = JSON.stringify(result.details);
+    const rendered = textOf(tool().renderResult(result, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }));
+    expect(rendered.split("\n")[0]).toBe("↳ edited +1 -1 • semantic");
+    expect(rendered).toContain("↳ diff +1 -1 • 1 hunk • 1 file • unified");
+    expect(rendered).toContain("▌ 2 │ TWO");
+    expect(JSON.stringify(result.details)).toBe(before);
+  });
+
+
+  it("renders compact edit call grammar", () => {
+    const t = tool();
+    expect(textOf(t.renderCall({ path: "tmp/file.txt", edits: [{ replace: { old_text: "a", new_text: "b" } }] }, theme, { argsComplete: true }))).toBe("edit tmp/file.txt (1 edit)");
+  });
+
+  it("keeps no-op and expanded error details visible", () => {
+    const t = tool();
+    const err = { isError: true, content: [{ type: "text", text: "First line\nSecond line" }], details: { diff: "", ptcValue: { warnings: [], noopEdits: [] } } };
+    expect(textOf(t.renderResult(err, {}, theme, {}))).toBe("↳ First line");
+    expect(textOf(t.renderResult(err, { expanded: true }, theme, { expanded: true }))).toContain("Second line");
+    const noop = { isError: true, content: [{ type: "text", text: "No changes made" }], details: { diff: "", ptcValue: { warnings: [], noopEdits: [{}] } } };
+    expect(textOf(t.renderResult(noop, {}, theme, {}))).toBe("↳ no-op");
+  });
+
+
+  it("uses summary grammar for pending edit results", () => {
+    expect(textOf(tool().renderResult({ content: [] }, {}, theme, { isPartial: true }))).toBe("↳ pending edit");
+  });
+
+  it("uses the same visual grammar for pending edit previews", async () => {
+    const cwd = mkdtempSync(resolve(tmpdir(), "pi-edit-render-"));
+    const filePath = resolve(cwd, "sample.ts");
+    writeFileSync(filePath, "const value = 1;\n", "utf-8");
+    const t = tool();
+    const args = { path: filePath, edits: [{ replace: { old_text: "const value = 1;", new_text: "const value = 2;" } }] };
+    const context: any = { argsComplete: false, cwd, state: {}, invalidate: vi.fn() };
+    const first = t.renderCall(args, theme, context);
+    await Promise.resolve();
+    const second = t.renderCall(args, theme, { ...context, lastComponent: first });
+    const rendered = textOf(second);
+    expect(rendered).toContain("↳ pending edit");
+    expect(rendered).toContain("↳ diff +1 -1");
+  });
+});

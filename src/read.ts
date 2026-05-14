@@ -25,6 +25,7 @@ import { buildLocalBundle } from "./read-local-bundle.js";
 import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 import { Text } from "@earendil-works/pi-tui";
 import { formatReadCallText, formatReadResultText } from "./read-render-helpers.js";
+import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine, wrapReadHashlinesForWidth } from "./tui-render-utils.js";
 
 const READ_PROMPT_METADATA = defineToolPromptMetadata({
 	promptUrl: new URL("../prompts/read.md", import.meta.url),
@@ -591,85 +592,48 @@ return succeed({
 });
 		},
 		renderCall(args: any, theme: any, ...rest: any[]) {
-			const _context = rest[0];
+			const context = rest[0] ?? {};
 			const { path: filePath, suffix } = formatReadCallText(args);
-
-			let text = theme.fg("toolTitle", theme.bold("read"));
-			if (filePath) {
-				text += ` ${theme.fg("accent", filePath)}`;
-			} else {
-				text += ` ${theme.fg("toolOutput", "...")}`;
-			}
-			if (suffix) {
-				text += ` ${theme.fg("dim", suffix)}`;
-			}
-			return new Text(text, 0, 0);
+			const rangeSuffix = typeof args?.offset === "number" && typeof args?.limit === "number" && args.offset > 0 && args.limit > 0
+				? `:${args.offset}-${args.offset + args.limit - 1}`
+				: "";
+			let text = renderToolLabel(theme, "read");
+			text += filePath ? ` ${theme.fg("accent", `${filePath}${rangeSuffix}`)}` : ` ${theme.fg("toolOutput", "...")}`;
+			if (!rangeSuffix && suffix) text += ` ${theme.fg("dim", suffix)}`;
+			return new Text(clampLineToWidth(text, context.width), 0, 0);
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any, ...rest: any[]) {
-			const context: { isPartial?: boolean; isError?: boolean; expanded?: boolean; cwd?: string } =
-				rest[0] ?? options ?? {};
+			const context: { isPartial?: boolean; isError?: boolean; expanded?: boolean; cwd?: string; width?: number } = rest[0] ?? options ?? {};
 			const isPartial = context.isPartial ?? (options as any)?.isPartial ?? false;
 			const isError = context.isError ?? false;
-			const expanded = context.expanded ?? (options as any)?.expanded ?? false;
-
-			if (isPartial) return new Text(theme.fg("dim", "Reading\u2026"), 0, 0);
+			const expanded = isRendererExpanded(options as any, context as any);
+			const width = context.width ?? (options as any)?.width;
+			if (isPartial) return new Text(clampLinesToWidth([summaryLine("pending read")], width).join("\n"), 0, 0);
 
 			const content = result.content?.[0];
 			const textContent = content?.type === "text" ? content.text : "";
-
 			if (isError || result.isError) {
 				const firstLine = textContent.split("\n")[0] || "Error";
-				if (expanded) {
-					return new Text(theme.fg("error", textContent || firstLine), 0, 0);
-				}
-				return new Text(theme.fg("error", firstLine), 0, 0);
+				const errorText = expanded ? (textContent || firstLine) : firstLine;
+				return new Text(clampLinesToWidth([summaryLine(errorText)], width).join("\n"), 0, 0);
 			}
 
-			const ptcValue = (result.details as any)?.ptcValue as {
-				tool: "read";
-				range: { startLine: number; endLine: number; totalLines: number };
-				warnings: PtcWarning[];
-				truncation: { outputLines: number; totalLines: number; outputBytes: number; totalBytes: number } | null;
-				symbol: { query: string; name: string; kind: string; parentName?: string; startLine: number; endLine: number } | null;
-				map: { requested: boolean; appended: boolean };
-			} | undefined;
-
+			const ptcValue = (result.details as any)?.ptcValue as { range: { startLine: number; endLine: number; totalLines: number }; truncation: any; symbol: any; map: any; warnings: PtcWarning[] } | undefined;
 			if (!ptcValue) {
-				const lines = textContent.split("\n").length;
-				return new Text(theme.fg("success", `\u2713 ${lines} lines`), 0, 0);
+				const lines = textContent.split("\n").filter(Boolean).length || textContent.split("\n").length;
+				return new Text(summaryLine(`loaded ${lines} ${lines === 1 ? "line" : "lines"}`, { hidden: !!textContent && !expanded }), 0, 0);
 			}
 
-			const info = formatReadResultText({
-				range: ptcValue.range,
-				truncation: ptcValue.truncation,
-				symbol: ptcValue.symbol,
-				map: ptcValue.map,
-				warnings: ptcValue.warnings,
-			});
-
-			const parts: string[] = [];
-
-			if (info.symbolBadge) {
-				parts.push(theme.fg("success", `\u2713 ${info.symbolBadge}`));
-			}
-
-			parts.push(theme.fg(info.truncated ? "warning" : "success", info.summary));
-
-			for (const badge of info.badges) {
-				if (badge.startsWith("\u26a0")) {
-					parts.push(theme.fg("warning", badge));
-				} else {
-					parts.push(theme.fg("dim", badge));
-				}
-			}
-
-			let text = parts.join("  ");
-
-			if (expanded && textContent) {
-				text += "\n" + textContent;
-			}
-
-			return new Text(text, 0, 0);
+			const info = formatReadResultText({ range: ptcValue.range, truncation: ptcValue.truncation, symbol: ptcValue.symbol, map: ptcValue.map, warnings: ptcValue.warnings });
+			const visibleLines = info.truncated && ptcValue.truncation ? ptcValue.truncation.outputLines : ptcValue.range.endLine - ptcValue.range.startLine + 1;
+			const loadedWord = visibleLines === 1 ? "line" : "lines";
+			const summaryParts: string[] = [info.truncated ? `loaded ${visibleLines} of ${ptcValue.truncation?.totalLines ?? ptcValue.range.totalLines} ${loadedWord} (truncated)` : `loaded ${visibleLines} ${loadedWord}`];
+			if (info.symbolBadge) summaryParts.push(info.symbolBadge);
+			for (const badge of info.badges) summaryParts.push(badge);
+			const summary = summaryParts.join(" • ");
+			let text = summaryLine(summary, { hidden: !!textContent && !expanded });
+			if (expanded && textContent) text += "\n" + wrapReadHashlinesForWidth(textContent, width);
+			return new Text(clampLinesToWidth(text.split("\n"), width).join("\n"), 0, 0);
 		},
 	} satisfies Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof ptc };
 

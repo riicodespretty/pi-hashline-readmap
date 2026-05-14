@@ -17,6 +17,7 @@ import { throwIfAborted } from "./runtime";
 import { Text } from "@earendil-works/pi-tui";
 import { formatGrepCallText, formatGrepResultText } from "./grep-render-helpers.js";
 import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
+import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
 
 const GREP_PROMPT_METADATA = defineToolPromptMetadata({
 	promptUrl: new URL("../prompts/grep.md", import.meta.url),
@@ -709,32 +710,30 @@ if (p.scope === "symbol" && !summary) {
 			};
 		},
 		renderCall(args: any, theme: any, ...rest: any[]) {
-			const _context = rest[0];
+			const context = rest[0] ?? {};
 			const { pattern, suffix } = formatGrepCallText(args);
-
-			let text = theme.fg("toolTitle", theme.bold("grep "));
-			text += theme.fg("accent", pattern);
-			if (suffix) {
-				text += theme.fg("dim", ` ${suffix}`);
-			}
-			return new Text(text, 0, 0);
+			let text = `${renderToolLabel(theme, "grep")} ${theme.fg("accent", `/${pattern}/`)}`;
+			if (suffix) text += theme.fg("dim", ` in ${suffix}`);
+			return new Text(clampLineToWidth(text, context.width), 0, 0);
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any, ...rest: any[]) {
-			const context: { isPartial?: boolean; isError?: boolean; expanded?: boolean; cwd?: string } =
+			const context: { isPartial?: boolean; isError?: boolean; expanded?: boolean; cwd?: string; width?: number } =
 				rest[0] ?? options ?? {};
 			const isPartial = context.isPartial ?? (options as any)?.isPartial ?? false;
 			const isError = context.isError ?? false;
-			const expanded = context.expanded ?? (options as any)?.expanded ?? false;
+			const expanded = isRendererExpanded(options as any, context as any);
 			const cwd = context.cwd ?? process.cwd();
+			const width = (context as any).width ?? (options as any)?.width;
 
-			if (isPartial) return new Text(theme.fg("warning", "Searching\u2026"), 0, 0);
+			if (isPartial) return new Text(clampLinesToWidth([summaryLine("pending search")], width).join("\n"), 0, 0);
 
 			const content = result.content?.[0];
 			const textContent = content?.type === "text" ? content.text : "";
 
 			if (isError || result.isError) {
 				const firstLine = textContent.split("\n")[0] || "Error";
-				return new Text(theme.fg("error", firstLine), 0, 0);
+				const body = expanded && textContent ? textContent : firstLine;
+				return new Text(clampLinesToWidth(summaryLine(body).split("\n"), width).join("\n"), 0, 0);
 			}
 
 			const ptcValue = (result.details as any)?.ptcValue as {
@@ -759,44 +758,21 @@ if (p.scope === "symbol" && !summary) {
 				hasBinaryWarning,
 			});
 
-			if (info.noMatches && !hasBinaryWarning) {
-				return new Text(theme.fg("muted", "No matches"), 0, 0);
-			}
-
-			const parts: string[] = [];
-			if (info.summary) {
-				parts.push(theme.fg(info.truncated ? "warning" : "success", info.summary));
-			}
-
-			for (const badge of info.badges) {
-				if (badge.startsWith("\u26a0")) {
-					parts.push(theme.fg("warning", badge));
-				} else {
-					parts.push(theme.fg("dim", badge));
-				}
-			}
-
-			let text = parts.join("  ") || theme.fg("muted", "No matches");
-
+			if (info.noMatches && !hasBinaryWarning) return new Text(summaryLine("no matches"), 0, 0);
+			const matchCount = ptcValue?.totalMatches ?? 0;
+			const matchWord = matchCount === 1 ? "match" : "matches";
+			let text = summaryLine(`${matchCount} ${matchWord} returned`, { hidden: !!textContent && !expanded });
+			for (const badge of info.badges) text += theme.fg(badge.startsWith("⚠") ? "warning" : "dim", `  ${badge}`);
 			if (expanded && ptcValue?.records) {
 				const fileCounts = new Map<string, number>();
-				for (const r of ptcValue.records) {
-					if (r.path && r.kind === "match") {
-						fileCounts.set(r.path, (fileCounts.get(r.path) ?? 0) + 1);
-					}
-				}
-				const entries = [...fileCounts.entries()].sort((a, b) => b[1] - a[1]);
-				const showEntries = entries.slice(0, 20);
-				for (const [filePath, count] of showEntries) {
+				for (const r of ptcValue.records) if (r.path && r.kind === "match") fileCounts.set(r.path, (fileCounts.get(r.path) ?? 0) + 1);
+				for (const [filePath, count] of [...fileCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
 					const display = path.relative(cwd, filePath) || filePath;
 					text += "\n" + theme.fg("dim", `  ${display} (${count})`);
 				}
-				if (entries.length > 20) {
-					text += "\n" + theme.fg("muted", `  \u2026 and ${entries.length - 20} more files`);
-				}
+				if (fileCounts.size > 20) text += "\n" + theme.fg("muted", `  … and ${fileCounts.size - 20} more files`);
 			}
-
-			return new Text(text, 0, 0);
+			return new Text(clampLinesToWidth(text.split("\n"), width).join("\n"), 0, 0);
 		},
 	} satisfies Parameters<ExtensionAPI["registerTool"]>[0] & { ptc: typeof ptc };
 

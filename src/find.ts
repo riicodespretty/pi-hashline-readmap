@@ -10,6 +10,7 @@ import * as findStat from "./find-stat.js";
 import { parseRelativeOrIsoDate, parseSize } from "./find-parsers.js";
 import { buildPtcError } from "./ptc-value.js";
 import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
+import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
 
 const MAX_BYTES = 50 * 1024; // 50 KB
 const DEFAULT_LIMIT = 1000;
@@ -600,21 +601,27 @@ export function registerFindTool(pi: ExtensionAPI) {
       };
     },
 
-    renderCall(args: any, theme: any) {
+    renderCall(args: any, theme: any, context: any = {}) {
       const { pattern, path } = args as { pattern: string; path?: string };
-      const label = theme.fg("toolTitle", "🔍 find");
       const target = path ? `${pattern} in ${path}` : pattern;
-      return new Text(`${label} ${theme.fg("muted", target)}`, 0, 0);
+      return new Text(clampLineToWidth(`${renderToolLabel(theme, "find")} ${theme.fg("muted", target)}`, context.width), 0, 0);
     },
 
-    renderResult(result: any, _options: any, theme: any) {
-      const output =
-        result.content[0]?.type === "text"
-          ? (result.content[0] as { type: "text"; text: string }).text
-          : "";
-      const lineCount = output.split("\n").filter((l: string) => l.length > 0 && !l.startsWith("[") && !l.startsWith("Hint")).length;
-      const summary = lineCount > 0 ? `${lineCount} results` : "no results";
-      return new Text(theme.fg("toolOutput", summary), 0, 0);
+    renderResult(result: any, options: any, theme: any, context: any = {}) {
+      const expanded = isRendererExpanded(options, context);
+      const width = context.width ?? options?.width;
+      const output = result.content[0]?.type === "text" ? (result.content[0] as { type: "text"; text: string }).text : "";
+      if (result.isError || context.isError) {
+        const firstLine = output.split("\n")[0] || "error";
+        const body = expanded && output ? output : firstLine;
+        return new Text(clampLinesToWidth(summaryLine(body).split("\n"), width).join("\n"), 0, 0);
+      }
+      const ptcValue = result.details?.ptcValue as { totalEntries?: number } | undefined;
+      const total = ptcValue?.totalEntries ?? output.split("\n").filter((l: string) => l.length > 0 && !l.startsWith("[") && !l.startsWith("Hint")).length;
+      if (total === 0) return new Text(summaryLine("no results"), 0, 0);
+      let text = summaryLine(`${total} ${total === 1 ? "result" : "results"} returned`, { hidden: !!output && !expanded });
+      if (expanded && output) text += `\n${output}`;
+      return new Text(clampLinesToWidth(text.split("\n"), width).join("\n"), 0, 0);
     },
   };
 
