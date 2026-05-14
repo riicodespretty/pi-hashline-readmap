@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 describe("prompts/edit.md coverage", () => {
-  it("documents recovery, variants, replace safety, anchor sources, and validation warnings", () => {
+  it("documents recovery, variants, replace safety, anchor sources, validation warnings, and post-edit verification", () => {
     const content = readFileSync(resolve("prompts/edit.md"), "utf8");
 
     expect(content).toContain("hash mismatch");
@@ -26,6 +26,10 @@ describe("prompts/edit.md coverage", () => {
     expect(content).toContain("anchored edits");
     expect(content).toContain("file-not-read");
     expect(content).toContain("syntax-regression");
+    expect(content).toContain("postEditVerify");
+    expect(content).toContain("default off");
+    expect(content).toContain("post-write persisted-content verification");
+    expect(content).toContain("not syntax validation");
     expect(content.split("\n").length).toBeGreaterThanOrEqual(70);
   });
 });

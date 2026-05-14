@@ -20,6 +20,7 @@ import { buildEditPreviewKey, buildPendingEditPreviewData, resolvePendingDiffPre
 import { buildDiffData, type DiffBlockRange } from "./diff-data.js";
 import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, summaryLine } from "./tui-render-utils.js";
 import { renderTuiDiff } from "./tui-diff-renderer.js";
+import { buildContextHygieneMetadata, buildFileResource, type ContextHygieneMetadata } from "./context-hygiene.js";
 
 const EDIT_PENDING_PREVIEW_STATE_KEY = "hashline-edit-pending-preview";
 
@@ -69,6 +70,9 @@ const hashlineEditSchema = Type.Object(
 	{
 		path: Type.String({ description: "File path (relative or absolute)" }),
 		edits: Type.Optional(Type.Array(hashlineEditItemSchema, { description: "Array of edit operations" })),
+		postEditVerify: Type.Optional(Type.Boolean({
+			description: "Opt in to post-write persisted-content verification. Default false.",
+		})),
 	},
 	{ additionalProperties: true },
 );
@@ -91,10 +95,11 @@ function buildEditError(
 	message: string,
 	hint?: string,
 	errorDetails?: Record<string, unknown>,
+	contextHygiene?: ContextHygieneMetadata,
 ): {
 	content: [{ type: "text"; text: string }];
 	isError: true;
-	details: EditToolDetails & { ptcValue: any };
+	details: EditToolDetails & { ptcValue: any; contextHygiene?: ContextHygieneMetadata };
 } {
 	return {
 		content: [{ type: "text", text: message }],
@@ -108,7 +113,8 @@ function buildEditError(
 				path,
 				error: buildPtcError(code, message, hint, errorDetails),
 			},
-		} as EditToolDetails & { ptcValue: any },
+			...(contextHygiene ? { contextHygiene } : {}),
+		} as EditToolDetails & { ptcValue: any; contextHygiene?: ContextHygieneMetadata },
 	};
 }
 
@@ -479,8 +485,9 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 					syntaxWarning = message;
 				}
 			}
+			const writeContent = bom + restoreLineEndings(result, originalEnding);
 			try {
-				await fsWriteFile(absolutePath, bom + restoreLineEndings(result, originalEnding), "utf-8");
+				await fsWriteFile(absolutePath, writeContent, "utf-8");
 			} catch (err: any) {
 				const wrapped = wrapWriteError(err, path);
 				const code =
@@ -494,6 +501,36 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				return buildEditError(absolutePath, code, message, undefined, code === "fs-error"
 					? { fsCode: err?.code, fsMessage: err?.message }
 					: undefined);
+			}
+
+			if (input.postEditVerify === true) {
+				const postWriteMutationContextHygiene = buildContextHygieneMetadata({
+					tool: "edit",
+					classification: "mutation",
+					resources: [buildFileResource(absolutePath)],
+				});
+				let verifiedContent: string;
+				try {
+					const verified = await fsReadFile(absolutePath, "utf-8");
+					verifiedContent = verified;
+				} catch (err: any) {
+					const message = `Edit write completed but post-edit verification failed: could not read ${path} after writing.`;
+					return buildEditError(absolutePath, "post-edit-verification-read-failed", message, undefined, {
+							fsCode: err?.code,
+							fsMessage: err?.message,
+						},
+						postWriteMutationContextHygiene,
+					);
+				}
+				if (verifiedContent !== writeContent) {
+					const message = `Edit write completed but post-edit verification did not confirm the intended content for ${path}. Re-read the file before making follow-up edits.`;
+					return buildEditError(absolutePath, "post-edit-verification-mismatch", message, undefined, {
+							expectedLength: writeContent.length,
+							actualLength: verifiedContent.length,
+						},
+						postWriteMutationContextHygiene,
+					);
+				}
 			}
 
 			const diffResult = generateCompactOrFullDiff(originalNormalized, result);
