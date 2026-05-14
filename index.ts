@@ -9,6 +9,7 @@ import { registerLsTool } from "./src/ls.js";
 import { registerFindTool } from "./src/find.js";
 import { registerBashRendererTool } from "./src/bash-renderer.js";
 import { filterBashOutput } from "./src/rtk/bash-filter.js";
+import { buildRtkCompaction } from "./src/rtk/rtk-compaction.js";
 import { ensureBashOriginalOutputSnapshot, selectBashOriginalOutput } from "./src/rtk/bash-original-output.js";
 import { applyBashContextGuard, resolveBashContextGuardConfig, type BashContextGuardConfig } from "./src/rtk/bash-context-guard.js";
 import { stripAnsi } from "./src/rtk/ansi.js";
@@ -401,6 +402,15 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
       config: bashContextGuardConfig,
     });
     const bashOriginalOutput = guarded.metadata.trimmed ? originalMetadataForGuard : originalSelection.metadata;
+    const rtkCompaction = buildRtkCompaction({
+      rawInput: originalSelection.inputForRtk,
+      output,
+      info,
+    });
+    const existingPtcValue =
+      existingDetails.ptcValue && typeof existingDetails.ptcValue === "object"
+        ? (existingDetails.ptcValue as Record<string, unknown>)
+        : {};
     return {
       content: [{ type: "text" as const, text: guarded.text }, ...nonTextContent],
       details: {
@@ -409,6 +419,8 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
         contextHygiene: contextHygieneForDetails,
         bashContextGuard: guarded.metadata,
         ...(bashOriginalOutput ? { bashOriginalOutput } : {}),
+        rtkCompaction,
+        ptcValue: { ...existingPtcValue, rtkCompaction },
       },
     };
   });

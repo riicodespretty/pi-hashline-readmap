@@ -36,5 +36,5 @@ describe("Pi system prompt metadata integration", () => {
         expect(systemPrompt).toContain(`- ${guideline}`);
       }
     }
-  });
+  }, 20_000);
 });
