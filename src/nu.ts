@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -84,6 +84,23 @@ export function resolveNuArgs(): string[] {
   // Priority 3: Clean slate — fast, predictable, no plugins
   return ["--no-config-file"];
 }
+
+function terminateNuProcess(proc: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+  try {
+    if (process.platform !== "win32" && proc.pid) {
+      process.kill(-proc.pid, signal);
+      return;
+    }
+  } catch {
+    // Fall back to terminating the direct child below.
+  }
+
+  try {
+    proc.kill(signal);
+  } catch {
+    // Process may already be dead.
+  }
+}
 /**
  * Execute a Nushell script via a temp file.
  * Streams partial output, handles timeout/abort, strips ANSI, truncates.
@@ -138,7 +155,11 @@ export async function executeNuScript(opts: NuExecuteOptions): Promise<NuExecute
     // Wrap spawn in try/catch for sync failures (e.g. invalid cwd)
     let proc;
     try {
-      proc = spawn("nu", args, { cwd, env: { ...process.env } });
+      proc = spawn("nu", args, {
+        cwd,
+        env: { ...process.env },
+        detached: process.platform !== "win32",
+      });
     } catch (err: unknown) {
       cleanup();
       const msg = err instanceof Error ? err.message : String(err);
@@ -149,23 +170,19 @@ export async function executeNuScript(opts: NuExecuteOptions): Promise<NuExecute
     // SIGTERM → 2s grace → SIGKILL escalation to prevent hanging
     const forceKill = () => {
       killTimer = setTimeout(() => {
-        try {
-          proc.kill("SIGKILL");
-        } catch {
-          // process may already be dead
-        }
+        terminateNuProcess(proc, "SIGKILL");
       }, 2000);
     };
 
     const timer = setTimeout(() => {
       timedOut = true;
-      proc.kill("SIGTERM");
+      terminateNuProcess(proc, "SIGTERM");
       forceKill();
     }, timeoutMs);
 
     const abort = () => {
       clearTimeout(timer);
-      proc.kill("SIGTERM");
+      terminateNuProcess(proc, "SIGTERM");
       forceKill();
     };
     signal?.addEventListener("abort", abort, { once: true });
