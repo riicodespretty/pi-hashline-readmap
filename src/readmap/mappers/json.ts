@@ -1,13 +1,10 @@
-import { exec } from "node:child_process";
 import { stat } from "node:fs/promises";
-import { promisify } from "node:util";
 
 import type { FileMap, FileSymbol } from "../types.js";
 
 import { DetailLevel, SymbolKind } from "../enums.js";
+import { countLinesWcStyle, execFileSafe } from "./_subprocess-utils.js";
 export const MAPPER_VERSION = 1;
-
-const execAsync = promisify(exec);
 
 /**
  * jq script to extract JSON schema structure.
@@ -116,7 +113,7 @@ function schemaToSymbols(
  */
 async function hasJq(): Promise<boolean> {
   try {
-    await execAsync("jq --version", { timeout: 5000 });
+    await execFileSafe("jq", ["--version"], { timeout: 5000 });
     return true;
   } catch {
     return false;
@@ -141,14 +138,12 @@ export async function jsonMapper(
     const totalBytes = stats.size;
 
     // Count lines
-    const { stdout: wcOutput } = await execAsync(`wc -l < "${filePath}"`, {
-      signal,
-    });
-    const totalLines = Number.parseInt(wcOutput.trim(), 10) || 1;
+    const totalLines = (await countLinesWcStyle(filePath, signal)) || 1;
 
     // Run jq to extract schema
-    const { stdout, stderr } = await execAsync(
-      `jq '${JQ_SCHEMA_SCRIPT.replaceAll("'", "'\\''")}' "${filePath}"`,
+    const { stdout, stderr } = await execFileSafe(
+      "jq",
+      [JQ_SCHEMA_SCRIPT, filePath],
       {
         signal,
         timeout: 10_000,
