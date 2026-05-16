@@ -1,14 +1,11 @@
-import { exec } from "node:child_process";
-import { stat } from "node:fs/promises";
-import { promisify } from "node:util";
+import { readFile, stat } from "node:fs/promises";
 
 import type { FileMap, FileSymbol } from "../types.js";
 
 import { DetailLevel, SymbolKind } from "../enums.js";
 import { detectLanguage } from "../language-detect.js";
+import { countLinesWcStyle } from "./_subprocess-utils.js";
 export const MAPPER_VERSION = 1;
-
-const execAsync = promisify(exec);
 
 /**
  * Patterns to grep for common structural elements.
@@ -66,6 +63,48 @@ function extractName(line: string): string {
   return cleaned.split(/\s|[({<:]/)[0] || "unknown";
 }
 
+async function scanMatches(filePath: string, signal?: AbortSignal): Promise<GrepMatch[]> {
+  const content = await readFile(filePath, { encoding: "utf8", signal });
+  const lines = content.split("\n");
+  const matches: GrepMatch[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (signal?.aborted) {
+      return matches;
+    }
+
+    const rawLine = lines[index];
+    const trimmedContent = rawLine.trim();
+    if (!trimmedContent) {
+      continue;
+    }
+
+    let matchedKind: SymbolKind | null = null;
+    for (const p of PATTERNS) {
+      if (new RegExp(p.pattern, "i").test(rawLine)) {
+        matchedKind = p.kind;
+        break;
+      }
+    }
+
+    if (matchedKind === null) {
+      continue;
+    }
+
+    matches.push({
+      lineNumber: index + 1,
+      content: trimmedContent,
+      kind: matchedKind,
+    });
+
+    if (matches.length >= 500) {
+      break;
+    }
+  }
+
+  return matches;
+}
+
 
 /**
  * Fallback mapper using grep for basic structure extraction.
@@ -81,51 +120,10 @@ export async function fallbackMapper(
     const totalBytes = stats.size;
 
     // Count lines
-    const { stdout: wcOutput } = await execAsync(`wc -l < "${filePath}"`, {
-      signal,
-    });
-    const totalLines = Number.parseInt(wcOutput.trim(), 10) || 0;
+    const totalLines = await countLinesWcStyle(filePath, signal);
 
-    // Build grep pattern
-    const combinedPattern = PATTERNS.map((p) => p.pattern).join("\\|");
-
-    // Run grep
-    let matches: GrepMatch[] = [];
-    try {
-      const { stdout } = await execAsync(
-        `grep -n "${combinedPattern}" "${filePath}" | head -500`,
-        { signal, timeout: 5000 }
-      );
-
-      // Parse grep output
-      for (const line of stdout.split("\n")) {
-        if (!line.trim()) {
-          continue;
-        }
-
-        const colonIndex = line.indexOf(":");
-        if (colonIndex === -1) {
-          continue;
-        }
-
-        const lineNumber = Number.parseInt(line.slice(0, colonIndex), 10);
-        const content = line.slice(colonIndex + 1).trim();
-
-        // Determine kind from pattern match
-        let matchedKind: SymbolKind = SymbolKind.Unknown;
-        for (const p of PATTERNS) {
-          if (new RegExp(p.pattern, "i").test(content)) {
-            matchedKind = p.kind;
-            break;
-          }
-        }
-
-        matches.push({ lineNumber, content, kind: matchedKind });
-      }
-    } catch {
-      // grep returns exit code 1 when no matches, which throws
-      matches = [];
-    }
+    // Scan for structural patterns, preserving the old grep/head behavior.
+    const matches = await scanMatches(filePath, signal);
 
     // Convert to symbols
     const symbols: FileSymbol[] = matches.map((m, i) => {
