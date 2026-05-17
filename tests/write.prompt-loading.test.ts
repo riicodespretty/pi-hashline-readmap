@@ -19,12 +19,13 @@ function captureTool(register: (pi: any) => void) {
 }
 
 describe("prompt loading — write", () => {
-  it("creates prompts/write.md and uses its first paragraph as the tool description", () => {
+  it("uses compact provider-visible metadata and keeps prompt details in prompts/write.md", () => {
     const promptPath = resolve("prompts/write.md");
     expect(existsSync(promptPath)).toBe(true);
 
     const tool = captureTool(registerWriteTool);
-    expect(tool.description).toBe(firstParagraph(promptPath));
+    expect(tool.description).toBe("Create or overwrite a file and return anchors.");
+    expect(firstParagraph(promptPath)).toContain("overwrites existing files");
   });
 
   it("documents overwrite, binary no-anchor behavior, safe display escaping, and best-effort map appends", () => {

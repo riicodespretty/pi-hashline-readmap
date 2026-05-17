@@ -19,9 +19,10 @@ function captureTool(register: (pi: any) => void) {
 }
 
 describe("ls prompt loading", () => {
-  it("uses the first paragraph of prompts/ls.md as the tool description", () => {
+  it("uses compact provider-visible metadata and keeps prompt details in prompts/ls.md", () => {
     const tool = captureTool(registerLsTool);
-    expect(tool.description).toBe(firstParagraph(resolve("prompts/ls.md")));
+    expect(tool.description).toBe("List one directory.");
+    expect(firstParagraph(resolve("prompts/ls.md"))).toContain("dotfiles are included");
   });
 
   it("documents single-directory output and routing to find/read", () => {

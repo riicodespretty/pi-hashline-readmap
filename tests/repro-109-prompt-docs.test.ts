@@ -21,7 +21,7 @@ function captureTool(register: (pi: any) => void) {
 }
 
 describe("repro 109 — prompt docs alignment", () => {
-  it("loads ls, find, and write descriptions from prompt files", () => {
+  it("uses compact descriptions while keeping ls, find, and write prompt docs", () => {
     const lsTool = captureTool(registerLsTool);
     const findTool = captureTool(registerFindTool);
     const writeTool = captureTool(registerWriteTool);
@@ -30,10 +30,13 @@ describe("repro 109 — prompt docs alignment", () => {
     const findPrompt = resolve("prompts/find.md");
     const writePrompt = resolve("prompts/write.md");
 
-    expect(lsTool.description).toBe(firstParagraph(lsPrompt));
-    expect(findTool.description).toBe(firstParagraph(findPrompt));
+    expect(lsTool.description).toBe("List one directory.");
+    expect(findTool.description).toBe("Find files by glob, respecting .gitignore.");
     expect(existsSync(writePrompt)).toBe(true);
-    expect(writeTool.description).toBe(firstParagraph(writePrompt));
+    expect(writeTool.description).toBe("Create or overwrite a file and return anchors.");
+    expect(firstParagraph(lsPrompt)).toContain("dotfiles are included");
+    expect(firstParagraph(findPrompt)).toContain("nested `.gitignore`");
+    expect(firstParagraph(writePrompt)).toContain("overwrites existing files");
   });
 
   it("documents hash mismatch recovery and all valid anchor sources in prompts/edit.md", () => {

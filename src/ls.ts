@@ -108,14 +108,14 @@ export function registerLsTool(pi: ExtensionAPI) {
     promptGuidelines: LS_PROMPT_METADATA.promptGuidelines,
     ptc: LS_PTC,
     parameters: Type.Object({
-      path: Type.Optional(Type.String({ description: "Directory to list (default: cwd)" })),
+      path: Type.Optional(Type.String({ description: "Directory path" })),
       limit: Type.Optional(
         Type.Union(
           [Type.Number(), Type.String()],
-          { description: "Max entries to return (default: 500)" },
+          { description: "Max entries" },
         ),
       ),
-      glob: Type.Optional(Type.String({ description: "Filter entries by glob pattern (e.g. '*.ts')" })),
+      glob: Type.Optional(Type.String({ description: "Glob filter" })),
     }),
     async execute(
       _toolCallId: string,

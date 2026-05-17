@@ -67,24 +67,24 @@ export function registerReadTool(pi: ExtensionAPI, options: ReadToolOptions = {}
 		promptSnippet: READ_PROMPT_METADATA.promptSnippet,
 		promptGuidelines: READ_PROMPT_METADATA.promptGuidelines,
 		parameters: Type.Object({
-			path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
+			path: Type.String({ description: "File path" }),
 			offset: Type.Optional(
 				Type.Union([
-					Type.Number({ description: "Line number to start reading from (1-indexed)" }),
-					Type.String({ description: "Line number to start reading from (1-indexed)" }),
+					Type.Number({ description: "Start line (1-indexed)" }),
+					Type.String({ description: "Start line (1-indexed)" }),
 				]),
 			),
 			limit: Type.Optional(
 				Type.Union([
-					Type.Number({ description: "Maximum number of lines to read" }),
-					Type.String({ description: "Maximum number of lines to read" }),
+					Type.Number({ description: "Max lines" }),
+					Type.String({ description: "Max lines" }),
 				]),
 			),
-			symbol: Type.Optional(Type.String({ description: "Symbol to read (e.g., functionName or ClassName.methodName)" })),
-			map: Type.Optional(Type.Boolean({ description: "Append structural map to output (cannot combine with symbol)" })),
+			symbol: Type.Optional(Type.String({ description: "Symbol name to read" })),
+			map: Type.Optional(Type.Boolean({ description: "Append structural map" })),
 			bundle: Type.Optional(
 				Type.Literal("local", {
-					description: 'Include the requested symbol plus direct same-file local support. Only "local" is defined.',
+					description: "Include same-file local support",
 				}),
 			),
 		}),

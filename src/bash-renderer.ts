@@ -1,8 +1,15 @@
 import { createBashTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { Type } from "@sinclair/typebox";
 import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
 
 type BuiltInFactory = (cwd: string) => any;
+
+const BASH_DESCRIPTION = "Run shell commands for tests, builds, git, package managers, and external CLIs.";
+const BASH_PARAMETERS = Type.Object({
+  command: Type.String({ description: "Shell command to run" }),
+  timeout: Type.Optional(Type.Number({ description: "Timeout seconds" })),
+});
 
 export function registerBashRendererTool(pi: Pick<ExtensionAPI, "registerTool">, options: { cwd?: string; createBuiltInBashTool?: BuiltInFactory } = {}): any {
   const cache = new Map<string, any>();
@@ -15,13 +22,11 @@ export function registerBashRendererTool(pi: Pick<ExtensionAPI, "registerTool">,
     }
     return tool;
   };
-  const initialCwd = options.cwd ?? process.cwd();
-  const initialBuiltIn = getBuiltIn(initialCwd);
   const tool = {
     name: "bash",
     label: "bash",
-    description: initialBuiltIn?.description ?? "Run bash commands with compact TUI rendering while delegating execution to Pi's built-in bash tool.",
-    parameters: initialBuiltIn?.parameters ?? {},
+    description: BASH_DESCRIPTION,
+    parameters: BASH_PARAMETERS,
     async execute(toolCallId: string, params: any, signal?: AbortSignal, onUpdate?: any, ctx: any = {}) {
       const cwd = ctx?.cwd ?? options.cwd ?? process.cwd();
       return getBuiltIn(cwd).execute(toolCallId, params, signal, onUpdate);
