@@ -16,11 +16,11 @@ async function getSgTool() {
 }
 
 describe("sg prompt loading", () => {
-  it("uses the first prompt paragraph as the exact ast_search description", async () => {
+  it("uses compact provider-visible metadata and keeps prompt details in prompts/sg.md", async () => {
     const tool = await getSgTool();
-    expect(tool.description).toBe(
-      "AST-aware structural code search. Use when text search is too broad or brittle and you need code shape, such as calls, imports, declarations, or JSX. Returns matches grouped by file with edit-ready hashline anchors.",
-    );
+    expect(tool.description).toBe("Search code by AST pattern and return anchored matches.");
+    const content = readFileSync(resolve(root, "prompts/sg.md"), "utf8");
+    expect(content).toContain("AST-aware structural code search");
   });
 
   it("keeps structural-search contract details in prompts/sg.md", () => {

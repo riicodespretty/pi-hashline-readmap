@@ -198,8 +198,8 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   const editTool = registerEditTool(pi, { wasReadInSession });
   const sgAvailable = isSgAvailable();
   const astSearchGuideline = sgAvailable
-    ? 'Use `ast_search` for structural code patterns (function calls, imports, JSX). Use `grep` for text matching.'
-    : 'Use grep for plain text search; for AST-aware structural code search (function calls, imports, JSX elements), install ast-grep: `brew install ast-grep`';
+    ? "Use grep summary for counts; use ast_search for structural code patterns."
+    : "Use grep summary for counts; install ast-grep to enable ast_search.";
 
   const grepTool = registerGrepTool(pi, { astSearchGuideline, onFileAnchored: noteRead });
   const sgTool = registerSgTool(pi, { onFileAnchored: noteRead });

@@ -68,10 +68,10 @@ const hashlineEditItemSchema = Type.Union([
 
 const hashlineEditSchema = Type.Object(
 	{
-		path: Type.String({ description: "File path (relative or absolute)" }),
-		edits: Type.Optional(Type.Array(hashlineEditItemSchema, { description: "Array of edit operations" })),
+		path: Type.String({ description: "File path" }),
+		edits: Type.Optional(Type.Array(hashlineEditItemSchema, { description: "Edit operations" })),
 		postEditVerify: Type.Optional(Type.Boolean({
-			description: "Opt in to post-write persisted-content verification. Default false.",
+			description: "Verify persisted content after write",
 		})),
 	},
 	{ additionalProperties: true },

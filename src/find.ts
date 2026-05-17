@@ -303,55 +303,34 @@ export function registerFindTool(pi: ExtensionAPI) {
     ptc: FIND_PTC,
     parameters: Type.Object(
       {
-        pattern: Type.String({ description: "Glob pattern (e.g. '*.ts', '*.test.ts')" }),
-        path: Type.Optional(Type.String({ description: "Directory to search (default: cwd)" })),
-        limit: Type.Optional(Type.Number({ description: "Max entries to return (default: 1000)" })),
+        pattern: Type.String({ description: "Glob or basename pattern" }),
+        path: Type.Optional(Type.String({ description: "Search root" })),
+        limit: Type.Optional(Type.Number({ description: "Max entries" })),
         type: Type.Optional(
           Type.Union(
             [Type.Literal("file"), Type.Literal("dir"), Type.Literal("any")],
-            { description: 'Filter by entry type (default: "file")' },
+            { description: "Entry type filter" },
           ),
         ),
-        maxDepth: Type.Optional(Type.Number({ description: "Maximum directory depth" })),
+        maxDepth: Type.Optional(Type.Number({ description: "Max directory depth" })),
         regex: Type.Optional(
-          Type.Boolean({ description: "Treat pattern as a JavaScript regular expression against file basename (default: false)" }),
+          Type.Boolean({ description: "Treat pattern as regex" }),
         ),
         sortBy: Type.Optional(
           Type.Union(
             [Type.Literal("name"), Type.Literal("mtime"), Type.Literal("size")],
-            { description: "Sort results by name (default), mtime, or size. Ascending unless reverse: true." },
+            { description: "Sort key" },
           ),
         ),
         reverse: Type.Optional(
-          Type.Boolean({ description: "Reverse the sort order (descending). Combined with sortBy: 'mtime' → newest first; with sortBy: 'size' → largest first." }),
+          Type.Boolean({ description: "Reverse sort order" }),
         ),
-        modifiedSince: Type.Optional(
-          Type.String({
-            description:
-              "Keep only entries modified strictly after this instant. " +
-              "Accepts ISO date ('2024-01-01'), ISO timestamp ('2024-01-01T00:00:00Z'), " +
-              "or relative shorthand: '30m', '1h', '24h', '7d'.",
-          }),
-        ),
+        modifiedSince: Type.Optional(Type.String({ description: "Modified after time" })),
         minSize: Type.Optional(
-          Type.Union(
-            [Type.Number(), Type.String()],
-            {
-              description:
-                "Minimum file size (inclusive). Bytes as number, or string with 1024-based suffix " +
-                "(B/K/KB/M/MB/G/GB, case-insensitive), e.g. '1MB', '500K', '1.5GB'. " +
-                "Filters files only; directories are never removed by size.",
-            },
-          ),
+          Type.Union([Type.Number(), Type.String()], { description: "Minimum file size" }),
         ),
         maxSize: Type.Optional(
-          Type.Union(
-            [Type.Number(), Type.String()],
-            {
-              description:
-                "Maximum file size (inclusive). Same format as minSize.",
-            },
-          ),
+          Type.Union([Type.Number(), Type.String()], { description: "Maximum file size" }),
         ),
       },
       { required: ["pattern"] },

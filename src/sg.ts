@@ -152,9 +152,9 @@ export function registerSgTool(pi: ExtensionAPI, options: SgToolOptions = {}) {
     promptSnippet: SG_PROMPT_METADATA.promptSnippet,
     promptGuidelines: SG_PROMPT_METADATA.promptGuidelines,
     parameters: Type.Object({
-      pattern: Type.String({ description: "AST pattern to search for" }),
-      lang: Type.Optional(Type.String({ description: "Language hint for ast-grep (e.g. 'typescript')" })),
-      path: Type.Optional(Type.String({ description: "Directory or file to search (default: cwd)" })),
+      pattern: Type.String({ description: "AST pattern" }),
+      lang: Type.Optional(Type.String({ description: "Language hint" })),
+      path: Type.Optional(Type.String({ description: "Search path" })),
     }),
     ptc,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {

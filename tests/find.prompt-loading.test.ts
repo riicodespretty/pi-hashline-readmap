@@ -19,9 +19,10 @@ function captureTool(register: (pi: any) => void) {
 }
 
 describe("find prompt loading", () => {
-  it("uses the first paragraph of prompts/find.md as the tool description", () => {
+  it("uses compact provider-visible metadata and keeps prompt details in prompts/find.md", () => {
     const tool = captureTool(registerFindTool);
-    expect(tool.description).toBe(firstParagraph(resolve("prompts/find.md")));
+    expect(tool.description).toBe("Find files by glob, respecting .gitignore.");
+    expect(firstParagraph(resolve("prompts/find.md"))).toContain("nested `.gitignore`");
   });
 
   it("documents basename matching, filters, sorting, and limit order", () => {

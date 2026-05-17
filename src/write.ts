@@ -288,9 +288,9 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
     promptSnippet: WRITE_PROMPT_METADATA.promptSnippet,
     promptGuidelines: WRITE_PROMPT_METADATA.promptGuidelines,
     parameters: Type.Object({
-      path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
-      content: Type.String({ description: "Content to write to the file" }),
-      map: Type.Optional(Type.Boolean({ description: "Append structural map to output" })),
+      path: Type.String({ description: "File path" }),
+      content: Type.String({ description: "File content" }),
+      map: Type.Optional(Type.Boolean({ description: "Append structural map" })),
     }),
     async execute(_toolCallId: string, params: { path: string; content: string; map?: boolean }, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any): Promise<any> {
       const cwd = ctx?.cwd ?? process.cwd();

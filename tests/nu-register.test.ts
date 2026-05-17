@@ -8,40 +8,28 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 describe("NU_GUIDELINES", () => {
   const allText = NU_GUIDELINES.join("\n");
+  const nuPrompt = readFileSync(resolve(__dirname, "../prompts/nu.md"), "utf-8");
 
-  it("contains routing guidance for both nu and bash", () => {
-    expect(allText).toContain("bash");
+  it("keeps provider-visible guidance compact and nu-specific", () => {
     expect(allText).toContain("nu");
+    expect(allText.length).toBeLessThanOrEqual(500);
   });
 
-  it("includes file exploration patterns", () => {
-    expect(allText).toContain("ls");
-    expect(allText).toContain("where");
-    expect(allText).toContain("sort-by");
-  });
-
-  it("includes structured data access patterns", () => {
-    expect(allText).toContain("open");
-    expect(allText).toContain("get");
-  });
-
-  it("includes a plugin pointer block", () => {
-    expect(allText).toContain("plugin list");
-    expect(allText).toContain("gstat");
-    expect(allText).toContain("query");
-    expect(allText).toContain("formats");
-  });
-
-  it("includes key syntax reference", () => {
-    expect(allText).toContain("length");
-    expect(allText).toContain("math sum");
-    expect(allText).toContain("group-by");
-    expect(allText).toContain("first");
-  });
-
-  it("includes routing table with task-to-tool mappings", () => {
-    expect(allText).toContain("Run tests");
-    expect(allText).toContain("package.json");
+  it("keeps detailed routing and syntax examples in prompts/nu.md", () => {
+    expect(nuPrompt).toContain("bash");
+    expect(nuPrompt).toContain("ls");
+    expect(nuPrompt).toContain("where");
+    expect(nuPrompt).toContain("sort-by");
+    expect(nuPrompt).toContain("open");
+    expect(nuPrompt).toContain("get");
+    expect(nuPrompt).toContain("plugin list");
+    expect(nuPrompt).toContain("plugins");
+    expect(nuPrompt).toContain("length");
+    expect(nuPrompt).toContain("math sum");
+    expect(nuPrompt).toContain("group-by");
+    expect(nuPrompt).toContain("first");
+    expect(nuPrompt).toContain("tests");
+    expect(nuPrompt).toContain("package.json");
   });
 });
 

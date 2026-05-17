@@ -270,24 +270,8 @@ export function augmentNuOutput(result: NuExecuteResult): string {
 const NU_SNIPPET =
   "Structured exploration shell — file inspection, data wrangling, system queries via Nushell pipelines. Use bash for project commands.";
 
-export const NU_GUIDELINES: string[] = [
-  `Use \`nu\` for exploring, inspecting, and analyzing. Use \`bash\` for executing project commands.
-
-| Task | Tool |
-|------|------|
-| Find large files in src/ | nu |
-| Run tests | bash |
-| Read fields from package.json | nu |
-| Install dependencies | bash |
-| Parse and filter a CSV | nu |
-| Run git diff | bash |
-| Check disk space or memory | nu |
-| Build Docker image | bash |
-| Explore an API response | nu |
-| Run a Makefile target | bash |`,
-  `nu primer: ls | where size > 10kb | first 5 · open package.json | get scripts · http get URL | get results · where / sort-by / first / length / math sum / group-by · strings in filters must be quoted.`,
-
-  `Optional plugins if installed: gstat, query, formats, semver, file. Run \`plugin list\` inside nu to check availability.`,
+export const NU_GUIDELINES = [
+  "Use nu for structured data, filesystem metadata, and system inspection.",
 ];
 
 const NU_PROMPT_METADATA = defineToolPromptMetadata({
@@ -322,9 +306,9 @@ export function registerNuTool(pi: ExtensionAPI): NuToolDefinition | false {
     promptGuidelines: NU_PROMPT_METADATA.promptGuidelines,
     ptc: NU_PTC,
     parameters: Type.Object({
-      command: Type.String({ description: "Nushell script to run. May be multi-line." }),
+      command: Type.String({ description: "Nushell script" }),
       timeout: Type.Optional(
-        Type.Number({ description: "Maximum run time in seconds. Defaults to 30." }),
+        Type.Number({ description: "Timeout seconds" }),
       ),
     }),
     async execute(_toolCallId, params: { command: string; timeout?: number }, signal, onUpdate, ctx) {

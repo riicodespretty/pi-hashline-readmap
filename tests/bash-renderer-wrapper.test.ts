@@ -25,12 +25,12 @@ describe("bash renderer wrapper", () => {
     expect(source).not.toContain("renderResult(result: any, optionsArg: any, theme: any");
   });
 
-  it("forwards the built-in bash description and parameters so the model sees the real schema", () => {
+  it("uses compact local metadata instead of forwarding verbose built-in metadata", () => {
     const params = { type: "object", properties: { command: { type: "string" } }, required: ["command"] };
     const builtIn = { name: "bash", label: "bash", description: "real bash description", parameters: params, execute: async () => ({ content: [{ type: "text", text: "" }] }) };
     let registered: any;
     registerBashRendererTool({ registerTool(def: any) { registered = def; } } as any, { createBuiltInBashTool: () => builtIn, cwd: "/tmp/work" });
-    expect(registered.description).toBe("real bash description");
-    expect(registered.parameters).toBe(params);
+    expect(registered.description).toBe("Run shell commands for tests, builds, git, package managers, and external CLIs.");
+    expect(registered.parameters.properties.command.description).toBe("Shell command to run");
   });
 });

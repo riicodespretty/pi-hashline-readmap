@@ -30,33 +30,33 @@ const GREP_PROMPT_METADATA = defineToolPromptMetadata({
 });
 
 const grepSchema = Type.Object({
-	pattern: Type.String({ description: "Search pattern (regex or literal string)" }),
-	path: Type.Optional(Type.String({ description: "Directory or file to search (default: current directory)" })),
-	glob: Type.Optional(Type.String({ description: "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'" })),
-	ignoreCase: Type.Optional(Type.Boolean({ description: "Case-insensitive search (default: false)" })),
-	literal: Type.Optional(Type.Boolean({ description: "Treat pattern as literal string instead of regex (default: false)" })),
+	pattern: Type.String({ description: "Pattern to search" }),
+	path: Type.Optional(Type.String({ description: "Search path" })),
+	glob: Type.Optional(Type.String({ description: "Glob filter" })),
+	ignoreCase: Type.Optional(Type.Boolean({ description: "Ignore case" })),
+	literal: Type.Optional(Type.Boolean({ description: "Treat pattern literally" })),
 	context: Type.Optional(
 		Type.Union([
-			Type.Number({ description: "Number of lines to show before and after each match (default: 0)" }),
-			Type.String({ description: "Number of lines to show before and after each match (default: 0)" }),
+			Type.Number({ description: "Context lines" }),
+			Type.String({ description: "Context lines" }),
 		]),
 	),
 	limit: Type.Optional(
 		Type.Union([
-			Type.Number({ description: "Maximum number of matches to return (default: 100)" }),
-			Type.String({ description: "Maximum number of matches to return (default: 100)" }),
+			Type.Number({ description: "Max matches" }),
+			Type.String({ description: "Max matches" }),
 		]),
 	),
-	summary: Type.Optional(Type.Boolean({ description: "Return per-file match counts only (no hashline anchors)" })),
+	summary: Type.Optional(Type.Boolean({ description: "Return per-file counts" })),
 	scope: Type.Optional(
 		Type.Literal("symbol", {
-			description: 'Scope matches to enclosing symbol blocks. Only "symbol" is defined, and it is ignored when summary: true.',
+			description: "Scope matches to symbols",
 		}),
 	),
 	scopeContext: Type.Optional(
 		Type.Union([
-			Type.Number({ description: "Context lines within symbol scope (requires scope: \"symbol\"). 0 = match lines only." }),
-			Type.String({ description: "Context lines within symbol scope (requires scope: \"symbol\"). 0 = match lines only." }),
+			Type.Number({ description: "Symbol context lines" }),
+			Type.String({ description: "Symbol context lines" }),
 		]),
 	),
 });
@@ -307,7 +307,7 @@ export function registerGrepTool(pi: ExtensionAPI, options: GrepToolOptions = {}
 		ptc,
 		promptSnippet: GREP_PROMPT_METADATA.promptSnippet,
 		promptGuidelines: options.astSearchGuideline
-			? [...GREP_PROMPT_METADATA.promptGuidelines, options.astSearchGuideline]
+			? [GREP_PROMPT_METADATA.promptGuidelines[0], options.astSearchGuideline]
 			: GREP_PROMPT_METADATA.promptGuidelines,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			await ensureHashInit();
