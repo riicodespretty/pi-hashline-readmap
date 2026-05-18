@@ -4,8 +4,11 @@
  * Uses universal-ctags when installed to extract symbols.
  * Falls back gracefully when ctags is not available.
  */
-import { exec } from "node:child_process";
-import { stat } from "node:fs/promises";
+// NOTE: This mapper invokes ctags as a subprocess. Use `execFile` (no shell)
+// with argv arrays — never `exec` with template interpolation or shell
+// redirection — so user file paths are not parsed by `/bin/sh`. See GH #116.
+import { execFile } from "node:child_process";
+import { readFile, stat } from "node:fs/promises";
 import { promisify } from "node:util";
 
 import type { FileMap, FileSymbol } from "../types.js";
@@ -14,7 +17,7 @@ import { DetailLevel, SymbolKind } from "../enums.js";
 import { detectLanguage } from "../language-detect.js";
 export const MAPPER_VERSION = 1;
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // Cache ctags availability check
 let ctagsAvailable: boolean | null = null;
@@ -98,13 +101,14 @@ export async function isCtagsAvailable(): Promise<boolean> {
   }
 
   try {
-    const { stdout } = await execAsync("ctags --version 2>&1", {
+    const { stdout, stderr } = await execFileAsync("ctags", ["--version"], {
       timeout: 2000,
     });
+    const banner = `${stdout}\n${stderr}`;
     // Universal Ctags includes "Universal Ctags" in version output
     // Exuberant Ctags also works but is less feature-rich
     ctagsAvailable =
-      stdout.includes("Universal Ctags") || stdout.includes("Exuberant Ctags");
+      banner.includes("Universal Ctags") || banner.includes("Exuberant Ctags");
     return ctagsAvailable;
   } catch {
     ctagsAvailable = false;
@@ -171,6 +175,8 @@ export async function ctagsMapper(
 
     const stats = await stat(filePath);
     const totalBytes = stats.size;
+    const fileText = await readFile(filePath, "utf8");
+    const totalLines = fileText.split("\n").length - 1;
 
     if (signal?.aborted) {
       return null;
@@ -179,11 +185,9 @@ export async function ctagsMapper(
     // Run ctags with JSON output and line numbers
     // --output-format=json requires Universal Ctags 5.9+
     // --fields=+n ensures line numbers are included in JSON output
-    const cmd = `ctags --output-format=json --fields=+n -f - "${filePath}" 2>/dev/null`;
-
     let stdout: string;
     try {
-      ({ stdout } = await execAsync(cmd, {
+      ({ stdout } = await execFileAsync("ctags", ["--output-format=json", "--fields=+n", "-f", "-", filePath], {
         signal,
         timeout: 10_000,
         maxBuffer: 1024 * 1024,
@@ -197,11 +201,6 @@ export async function ctagsMapper(
       return null;
     }
 
-    // Count lines
-    const { stdout: wcOutput } = await execAsync(`wc -l < "${filePath}"`, {
-      signal,
-    });
-    const totalLines = Number.parseInt(wcOutput.trim(), 10) || 0;
 
     // Parse output
     const entries = parseCtagsOutput(stdout);
@@ -259,11 +258,11 @@ async function ctagsMapperLegacy(
   try {
     const stats = await stat(filePath);
     const totalBytes = stats.size;
+    const fileText = await readFile(filePath, "utf8");
+    const totalLines = fileText.split("\n").length - 1;
 
     // Run ctags with line numbers
-    const cmd = `ctags --excmd=number -f - "${filePath}" 2>/dev/null`;
-
-    const { stdout } = await execAsync(cmd, {
+    const { stdout } = await execFileAsync("ctags", ["--excmd=number", "-f", "-", filePath], {
       signal,
       timeout: 10_000,
       maxBuffer: 1024 * 1024,
@@ -273,11 +272,6 @@ async function ctagsMapperLegacy(
       return null;
     }
 
-    // Count lines
-    const { stdout: wcOutput } = await execAsync(`wc -l < "${filePath}"`, {
-      signal,
-    });
-    const totalLines = Number.parseInt(wcOutput.trim(), 10) || 0;
 
     // Parse traditional format
     const entries: CtagsEntry[] = [];

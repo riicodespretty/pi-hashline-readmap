@@ -36,6 +36,6 @@ describe("edit renderCall pending diff preview", () => {
 
 		expect(rendered).toContain("pending edit");
 		expect(rendered).toContain("↳ diff +1 -1");
-		expect(rendered).toContain("▌ 1 │ const unique = 2;");
+		expect(rendered).toContain("▌+ 1 │ const unique = 2;");
 	});
 });

@@ -11,6 +11,29 @@ const diffData: DiffData = { version: 1, stats: { added: 2, removed: 1, context:
   { kind: "add", newLine: 3, text: "three" },
 ], inlineDiffs: [{ removeLineIndex: 1, addLineIndex: 2, removeSpans: [{ kind: "remove", text: "two" }], addSpans: [{ kind: "add", text: "TWO" }] }] };
 
+const identityTheme = { fg: (_kind: string, text: string) => text } as any;
+
+const markerDiffData: DiffData = {
+  version: 1,
+  entries: [
+    { kind: "remove", oldLine: 1, text: "one" },
+    { kind: "add", newLine: 1, text: "ONE" },
+    { kind: "context", oldLine: 2, newLine: 2, text: "two" },
+  ],
+  stats: { added: 1, removed: 1, context: 1 },
+  blockRanges: [{ kind: "add", startLine: 1, endLine: 2 }],
+};
+
+const identicalSameLineDiffData: DiffData = {
+  version: 1,
+  entries: [
+    { kind: "remove", oldLine: 1, text: "same" },
+    { kind: "add", newLine: 1, text: "same" },
+  ],
+  stats: { added: 1, removed: 1, context: 0 },
+  blockRanges: [{ kind: "add", startLine: 1, endLine: 1 }],
+};
+
 describe("renderTuiDiff", () => {
   it("renders unified, compact, split, and summary modes within width", () => {
     const wide = renderTuiDiff({ diffData, width: 120, theme, expanded: true });
@@ -20,7 +43,7 @@ describe("renderTuiDiff", () => {
     const normal = renderTuiDiff({ diffData, width: 80, theme, expanded: true });
     expect(normal.mode).toBe("unified");
     expect(normal.lines[0]).toBe("↳ diff +2 -1 • 1 hunk • 1 file • unified");
-    expect(normal.lines.join("\n")).toContain("▌ 2 │ TWO");
+    expect(normal.lines.join("\n")).toContain("▌+ 2 │ TWO");
     const narrow = renderTuiDiff({ diffData, width: 28, theme, expanded: true });
     expect(narrow.mode).toBe("compact");
     expect(narrow.lines[0]).toBe("↳ diff +2 -1");
@@ -28,6 +51,37 @@ describe("renderTuiDiff", () => {
     expect(tiny.mode).toBe("summary");
     expect(tiny.lines).toEqual(["↳ diff +2"]);
     for (const rendered of [wide, normal, narrow, tiny]) expect(rendered.lines.every((line) => visibleWidth(line) <= rendered.width)).toBe(true);
+  });
+
+  it("emits textual gutter markers without relying on color", () => {
+    const normal = renderTuiDiff({ diffData: markerDiffData, width: 80, theme: identityTheme, expanded: true });
+    const text = normal.lines.join("\n");
+    expect(text).toContain("▌- 1 │ one");
+    expect(text).toContain("▌+ 1 │ ONE");
+    expect(text).toContain("▌  2 │ two");
+  });
+
+  it("same-line add and remove rows with identical text are distinct when color is stripped", () => {
+    const normal = renderTuiDiff({ diffData: identicalSameLineDiffData, width: 80, theme: identityTheme, expanded: true });
+    const bodyRows = normal.lines.filter((line) => line.includes("same"));
+    expect(bodyRows).toHaveLength(2);
+    expect(new Set(bodyRows).size).toBe(2);
+    expect(bodyRows[0]?.startsWith("▌- ")).toBe(true);
+    expect(bodyRows[1]?.startsWith("▌+ ")).toBe(true);
+  });
+
+  it("compact and split modes also emit textual gutter markers", () => {
+    const compact = renderTuiDiff({ diffData: markerDiffData, width: 28, theme: identityTheme, expanded: true });
+    expect(compact.mode).toBe("compact");
+    expect(compact.lines.join("\n")).toContain("▌- 1 one");
+    expect(compact.lines.join("\n")).toContain("▌+ 1 ONE");
+
+    const split = renderTuiDiff({ diffData: markerDiffData, width: 120, theme: identityTheme, expanded: true });
+    expect(split.mode).toBe("split");
+    const splitText = split.lines.join("\n");
+    expect(splitText).toContain("▌- 1 │ one");
+    expect(splitText).toContain("▌+ 1 │ ONE");
+    expect(splitText).toContain("▌  2 │ two");
   });
 
   it("renders collapsed progressive hidden-content hints", () => {

@@ -15,6 +15,7 @@ function header(data: DiffData, mode: TuiDiffMode, width: number): string {
   return visibleWidth(full) <= width ? full : clampLineToWidth(compactHeader(data), width);
 }
 function lineNo(entry: DiffEntry): string { return String(entry.kind === "add" ? entry.newLine : entry.kind === "remove" ? entry.oldLine : entry.kind === "context" ? entry.newLine : ""); }
+function gutterMarker(entry: DiffEntry): string { return entry.kind === "add" ? "+" : entry.kind === "remove" ? "-" : " "; }
 function textOf(entry: DiffEntry): string { return "text" in entry ? entry.text : ""; }
 function tint(theme: RendererTheme, entry: DiffEntry, text: string): string { return entry.kind === "add" ? theme.fg("success", text) : entry.kind === "remove" ? theme.fg("error", text) : theme.fg("toolOutput", text); }
 function spans(theme: RendererTheme, spans: DiffSpan[] | undefined, fallback: string): string { return spans?.map((s) => s.kind === "add" ? theme.fg("success", s.text) : s.kind === "remove" ? theme.fg("error", s.text) : s.text).join("") ?? fallback; }
@@ -23,15 +24,15 @@ function inlineText(input: RenderTuiDiffInput, index: number, entry: DiffEntry):
   if (!pair) return textOf(entry);
   return entry.kind === "remove" ? spans(input.theme, pair.removeSpans, textOf(entry)) : entry.kind === "add" ? spans(input.theme, pair.addSpans, textOf(entry)) : textOf(entry);
 }
-function unifiedRows(input: RenderTuiDiffInput): string[] { return input.diffData.entries.map((e, i) => e.kind === "meta" ? null : tint(input.theme, e, `▌ ${lineNo(e)} │ ${inlineText(input, i, e)}`)).filter((row): row is string => row !== null); }
-function compactRows(input: RenderTuiDiffInput): string[] { return input.diffData.entries.map((e, i) => e.kind === "add" || e.kind === "remove" ? tint(input.theme, e, `▌ ${lineNo(e)} ${inlineText(input, i, e)}`) : null).filter((row): row is string => row !== null); }
+function unifiedRows(input: RenderTuiDiffInput): string[] { return input.diffData.entries.map((e, i) => e.kind === "meta" ? null : tint(input.theme, e, `▌${gutterMarker(e)} ${lineNo(e)} │ ${inlineText(input, i, e)}`)).filter((row): row is string => row !== null); }
+function compactRows(input: RenderTuiDiffInput): string[] { return input.diffData.entries.map((e, i) => e.kind === "add" || e.kind === "remove" ? tint(input.theme, e, `▌${gutterMarker(e)} ${lineNo(e)} ${inlineText(input, i, e)}`) : null).filter((row): row is string => row !== null); }
 function splitRows(input: RenderTuiDiffInput, width: number): string[] {
   const pane = Math.max(10, Math.floor((width - 3) / 2));
   const rows = [`${"old".padEnd(pane)} │ new`];
   for (const [i, e] of input.diffData.entries.entries()) {
-    if (e.kind === "remove") rows.push(`${clampLineToWidth(`▌ ${e.oldLine} │ ${inlineText(input, i, e)}`, pane)} │ ${""}`);
-    else if (e.kind === "add") rows.push(`${"".padEnd(pane)} │ ${clampLineToWidth(`▌ ${e.newLine} │ ${inlineText(input, i, e)}`, pane)}`);
-    else if (e.kind === "context") rows.push(`${clampLineToWidth(`  ${e.oldLine} │ ${e.text}`, pane)} │ ${clampLineToWidth(`  ${e.newLine} │ ${e.text}`, pane)}`);
+    if (e.kind === "remove") rows.push(`${clampLineToWidth(`▌- ${e.oldLine} │ ${inlineText(input, i, e)}`, pane)} │ ${""}`);
+    else if (e.kind === "add") rows.push(`${"".padEnd(pane)} │ ${clampLineToWidth(`▌+ ${e.newLine} │ ${inlineText(input, i, e)}`, pane)}`);
+    else if (e.kind === "context") rows.push(`${clampLineToWidth(`▌  ${e.oldLine} │ ${e.text}`, pane)} │ ${clampLineToWidth(`▌  ${e.newLine} │ ${e.text}`, pane)}`);
   }
   return rows;
 }

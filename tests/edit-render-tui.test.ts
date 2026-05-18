@@ -15,7 +15,7 @@ describe("edit TUI renderer", () => {
     const rendered = textOf(tool().renderResult(result, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }));
     expect(rendered.split("\n")[0]).toBe("↳ edited +1 -1 • semantic");
     expect(rendered).toContain("↳ diff +1 -1 • 1 hunk • 1 file • unified");
-    expect(rendered).toContain("▌ 2 │ TWO");
+    expect(rendered).toContain("▌+ 2 │ TWO");
     expect(JSON.stringify(result.details)).toBe(before);
   });
 

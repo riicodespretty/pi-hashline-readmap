@@ -18,7 +18,7 @@ describe("write TUI renderer", () => {
     const rendered = textOf(t.renderResult(created, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }));
     expect(rendered.split("\n")[0]).toBe("↳ created");
     expect(rendered).toContain("↳ diff +3 -0 • 1 hunk • 1 file • unified");
-    expect(rendered).toContain("▌ 1 │ one");
+    expect(rendered).toContain("▌+ 1 │ one");
     expect(JSON.stringify(created.details)).toBe(before);
 
     const overwritten: any = { content: created.content, details: { ...created.details, writeState: "overwritten" } };
