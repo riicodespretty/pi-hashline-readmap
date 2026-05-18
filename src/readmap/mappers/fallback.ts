@@ -1,14 +1,13 @@
-import { exec } from "node:child_process";
-import { stat } from "node:fs/promises";
-import { promisify } from "node:util";
+// NOTE: This mapper scans user-provided file paths. Keep the implementation
+// in-process; do not use `exec` with template interpolation for grep/wc because
+// shell metacharacters in paths would be parsed by `/bin/sh`. See GH #116.
+import { readFile, stat } from "node:fs/promises";
 
 import type { FileMap, FileSymbol } from "../types.js";
 
 import { DetailLevel, SymbolKind } from "../enums.js";
 import { detectLanguage } from "../language-detect.js";
 export const MAPPER_VERSION = 1;
-
-const execAsync = promisify(exec);
 
 /**
  * Patterns to grep for common structural elements.
@@ -80,51 +79,29 @@ export async function fallbackMapper(
     const stats = await stat(filePath);
     const totalBytes = stats.size;
 
-    // Count lines
-    const { stdout: wcOutput } = await execAsync(`wc -l < "${filePath}"`, {
-      signal,
-    });
-    const totalLines = Number.parseInt(wcOutput.trim(), 10) || 0;
+    // Count lines in JS (matches `wc -l` semantics).
+    const fileText = await readFile(filePath, "utf8");
+    const lines = fileText.split("\n");
+    const totalLines = lines.length - 1;
 
-    // Build grep pattern
-    const combinedPattern = PATTERNS.map((p) => p.pattern).join("\\|");
+    const matches: GrepMatch[] = [];
+    for (const [index, rawLine] of lines.entries()) {
+      if (signal?.aborted) return null;
+      const content = rawLine.trim();
+      if (!content) continue;
 
-    // Run grep
-    let matches: GrepMatch[] = [];
-    try {
-      const { stdout } = await execAsync(
-        `grep -n "${combinedPattern}" "${filePath}" | head -500`,
-        { signal, timeout: 5000 }
-      );
-
-      // Parse grep output
-      for (const line of stdout.split("\n")) {
-        if (!line.trim()) {
-          continue;
+      let matchedKind: SymbolKind | null = null;
+      for (const p of PATTERNS) {
+        if (new RegExp(p.pattern, "i").test(content)) {
+          matchedKind = p.kind;
+          break;
         }
-
-        const colonIndex = line.indexOf(":");
-        if (colonIndex === -1) {
-          continue;
-        }
-
-        const lineNumber = Number.parseInt(line.slice(0, colonIndex), 10);
-        const content = line.slice(colonIndex + 1).trim();
-
-        // Determine kind from pattern match
-        let matchedKind: SymbolKind = SymbolKind.Unknown;
-        for (const p of PATTERNS) {
-          if (new RegExp(p.pattern, "i").test(content)) {
-            matchedKind = p.kind;
-            break;
-          }
-        }
-
-        matches.push({ lineNumber, content, kind: matchedKind });
       }
-    } catch {
-      // grep returns exit code 1 when no matches, which throws
-      matches = [];
+
+      if (matchedKind !== null) {
+        matches.push({ lineNumber: index + 1, content, kind: matchedKind });
+        if (matches.length >= 500) break;
+      }
     }
 
     // Convert to symbols

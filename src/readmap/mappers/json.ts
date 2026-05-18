@@ -1,5 +1,8 @@
-import { exec } from "node:child_process";
-import { stat } from "node:fs/promises";
+// NOTE: This mapper invokes jq as a subprocess. Use `execFile` (no shell) with
+// an args array — never `exec` with template interpolation — so paths containing
+// shell metacharacters are passed safely as argv entries. See GH #116.
+import { execFile } from "node:child_process";
+import { readFile, stat } from "node:fs/promises";
 import { promisify } from "node:util";
 
 import type { FileMap, FileSymbol } from "../types.js";
@@ -7,7 +10,7 @@ import type { FileMap, FileSymbol } from "../types.js";
 import { DetailLevel, SymbolKind } from "../enums.js";
 export const MAPPER_VERSION = 1;
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * jq script to extract JSON schema structure.
@@ -116,7 +119,7 @@ function schemaToSymbols(
  */
 async function hasJq(): Promise<boolean> {
   try {
-    await execAsync("jq --version", { timeout: 5000 });
+    await execFileAsync("jq", ["--version"], { timeout: 5000 });
     return true;
   } catch {
     return false;
@@ -140,21 +143,15 @@ export async function jsonMapper(
     const stats = await stat(filePath);
     const totalBytes = stats.size;
 
-    // Count lines
-    const { stdout: wcOutput } = await execAsync(`wc -l < "${filePath}"`, {
-      signal,
-    });
-    const totalLines = Number.parseInt(wcOutput.trim(), 10) || 1;
+    // Preserve the previous minimum-one-line behavior.
+    const fileText = await readFile(filePath, "utf8");
+    const totalLines = Math.max(1, fileText.split("\n").length - 1);
 
-    // Run jq to extract schema
-    const { stdout, stderr } = await execAsync(
-      `jq '${JQ_SCHEMA_SCRIPT.replaceAll("'", "'\\''")}' "${filePath}"`,
-      {
-        signal,
-        timeout: 10_000,
-        maxBuffer: 1024 * 1024, // 1MB
-      }
-    );
+    const { stdout, stderr } = await execFileAsync("jq", [JQ_SCHEMA_SCRIPT, filePath], {
+      signal,
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    });
 
     if (!stdout) {
       if (stderr) {

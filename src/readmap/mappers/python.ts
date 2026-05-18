@@ -1,5 +1,9 @@
-import { exec } from "node:child_process";
-import { stat } from "node:fs/promises";
+// NOTE: This mapper invokes a Python helper script as a subprocess. Use
+// `execFile` (no shell) with an args array — never `exec` with template
+// interpolation — so paths containing shell metacharacters are passed safely as
+// argv entries instead of being parsed by `/bin/sh`. See GH #116.
+import { execFile } from "node:child_process";
+import { readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -9,10 +13,10 @@ import type { FileMap, FileSymbol } from "../types.js";
 import { DetailLevel, SymbolKind } from "../enums.js";
 export const MAPPER_VERSION = 1;
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SCRIPT_PATH = join(__dirname, "../../scripts/python_outline.py");
+const SCRIPT_PATH = join(__dirname, "../../../scripts/python_outline.py");
 
 interface PythonSymbol {
   name: string;
@@ -98,21 +102,17 @@ export async function pythonMapper(
     const stats = await stat(filePath);
     const totalBytes = stats.size;
 
-    // Count lines
-    const { stdout: wcOutput } = await execAsync(`wc -l < "${filePath}"`, {
-      signal,
-    });
-    const totalLines = Number.parseInt(wcOutput.trim(), 10) || 0;
+    // Count lines in JS — matches `wc -l` semantics for newline-terminated and
+    // unterminated tails.
+    const fileText = await readFile(filePath, "utf8");
+    const totalLines = fileText.split("\n").length - 1;
 
-    // Run Python script
-    const { stdout, stderr } = await execAsync(
-      `python3 "${SCRIPT_PATH}" "${filePath}"`,
-      {
-        signal,
-        timeout: 10_000,
-        maxBuffer: 5 * 1024 * 1024, // 5MB
-      }
-    );
+    // Run Python script via execFile (no shell).
+    const { stdout, stderr } = await execFileAsync("python3", [SCRIPT_PATH, filePath], {
+      signal,
+      timeout: 10_000,
+      maxBuffer: 5 * 1024 * 1024,
+    });
 
     if (stderr && !stdout) {
       console.error(`Python mapper stderr: ${stderr}`);

@@ -27,7 +27,10 @@ describe("ast_search binary resolution", () => {
 
   it("executes the npm-provided sg binary when it resolves", async () => {
     const resolveBundledBin = vi.fn(() => "/mock/node_modules/@ast-grep/cli/bin/sg");
-    vi.doMock("../src/binary-resolution.js", () => ({ resolveBundledBin, executableCommand: (command: string) => ({ command, argsPrefix: [] }) }));
+    vi.doMock("../src/binary-resolution.js", () => ({
+      resolveBundledBin,
+      executableCommand: (command: string) => ({ command, argsPrefix: [] }),
+    }));
 
     const tool = await captureSgTool();
     vi.mocked(cp.execFile).mockImplementation((_cmd: any, _args: any, _opts: any, cb: any) => {
@@ -37,13 +40,16 @@ describe("ast_search binary resolution", () => {
 
     await tool.execute("tc", { pattern: "console.log($$$ARGS)" }, new AbortController().signal, () => {}, { cwd: process.cwd() });
 
-    expect(resolveBundledBin).toHaveBeenCalledWith("@ast-grep/cli", "sg", "sg");
+    expect(resolveBundledBin).toHaveBeenCalledWith("@ast-grep/cli", "sg", "ast-grep");
     expect(vi.mocked(cp.execFile).mock.calls[0][0]).toBe("/mock/node_modules/@ast-grep/cli/bin/sg");
   });
 
-  it("executes PATH sg when the npm-provided binary is unavailable", async () => {
+  it("prefers PATH `ast-grep` over Linux `sg` when the bundled binary is unavailable", async () => {
     const resolveBundledBin = vi.fn((_packageName: string, _binName: string, fallbackCommand: string) => fallbackCommand);
-    vi.doMock("../src/binary-resolution.js", () => ({ resolveBundledBin, executableCommand: (command: string) => ({ command, argsPrefix: [] }) }));
+    vi.doMock("../src/binary-resolution.js", () => ({
+      resolveBundledBin,
+      executableCommand: (command: string) => ({ command, argsPrefix: [] }),
+    }));
 
     const tool = await captureSgTool();
     vi.mocked(cp.execFile).mockImplementation((_cmd: any, _args: any, _opts: any, cb: any) => {
@@ -53,7 +59,7 @@ describe("ast_search binary resolution", () => {
 
     await tool.execute("tc", { pattern: "console.log($$$ARGS)" }, new AbortController().signal, () => {}, { cwd: process.cwd() });
 
-    expect(resolveBundledBin).toHaveBeenCalledWith("@ast-grep/cli", "sg", "sg");
-    expect(vi.mocked(cp.execFile).mock.calls[0][0]).toBe("sg");
+    expect(resolveBundledBin).toHaveBeenCalledWith("@ast-grep/cli", "sg", "ast-grep");
+    expect(vi.mocked(cp.execFile).mock.calls[0][0]).toBe("ast-grep");
   });
 });

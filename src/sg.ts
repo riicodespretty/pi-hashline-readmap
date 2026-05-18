@@ -124,7 +124,11 @@ function execFileText(
  * Runs `sg --version` synchronously with a 3-second timeout.
  */
 export function resolveSgBinary(): string {
-  return resolveBundledBin("@ast-grep/cli", "sg", "sg");
+  // PATH fallback name. We intentionally prefer `ast-grep` over `sg` because on
+  // Linux `sg` collides with util-linux's setgid helper (see GH #112). The
+  // bundled `@ast-grep/cli` package still resolves by its `sg` bin entry above;
+  // only the PATH fallback string changes.
+  return resolveBundledBin("@ast-grep/cli", "sg", "ast-grep");
 }
 
 export function isSgAvailable(): boolean {

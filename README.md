@@ -17,6 +17,8 @@ It also reduces extension conflict risk by replacing several overlapping tool pa
 - Navigate large files with structural maps and direct symbol reads.
 - Turn search results into edit anchors without an extra read step.
 - Search code structurally with `ast_search` when text search is too brittle.
+- Keep readmap subprocesses safe for paths containing shell metacharacters such as `"` and `$`.
+- Read pending write/edit diffs without color thanks to textual `+`/`-`/space gutter markers.
 - Explore files with agent-oriented `ls`, `find`, and optional `nu` tools.
 - Compress noisy test, build, Git, Docker, linter, package-manager, HTTP, transfer, and generic command output.
 - Use one extension instead of stacking overlapping `read`, `grep`, `edit`, and Bash-output packages.
@@ -58,7 +60,7 @@ Normal npm installs of `pi-hashline-readmap` include npm-managed CLI packages fo
 - `@ast-grep/cli` provides the `sg` binary used by `ast_search`.
 - `nushell` provides the `nu` binary used by the optional `nu` tool.
 
-The extension resolves those bundled binaries first and falls back to `sg` or `nu` on `PATH` when the npm-provided package or bin entry is unavailable. If troubleshooting a broken platform package, a system install can still be useful after repairing/removing the broken npm package or as a fallback in environments without the bundled binary:
+The extension resolves those bundled binaries first. If `@ast-grep/cli` cannot be resolved, `ast_search` falls back to `ast-grep` on `PATH` rather than `sg`, avoiding Linux util-linux `sg` collisions. The optional `nu` tool falls back to `nu` on `PATH` when the bundled `nushell` package or bin entry is unavailable. If troubleshooting a broken platform package, a system install can still be useful after repairing/removing the broken npm package or as a fallback in environments without the bundled binary:
 
 ```bash
 brew install ast-grep          # fallback for ast_search if @ast-grep/cli cannot run

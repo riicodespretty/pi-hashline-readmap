@@ -32,7 +32,7 @@ describe("write renderCall pending diff preview", () => {
 
 		expect(text).toContain("↳ pending overwrite");
 		expect(text).toContain("↳ diff +1 -1");
-		expect(text).toContain("▌ 1 │ old value");
-		expect(text).toContain("▌ 1 │ new value");
+		expect(text).toContain("▌- 1 │ old value");
+		expect(text).toContain("▌+ 1 │ new value");
 	});
 });

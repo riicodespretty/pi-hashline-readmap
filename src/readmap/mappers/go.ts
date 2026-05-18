@@ -1,6 +1,10 @@
-import { exec } from "node:child_process";
+// NOTE: This mapper invokes a Go helper binary as a subprocess. Use
+// `execFile` (no shell) with an args array — never `exec` with template
+// interpolation — so paths containing shell metacharacters are passed safely as
+// argv entries instead of being parsed by `/bin/sh`. See GH #116.
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -10,10 +14,10 @@ import type { FileMap, FileSymbol } from "../types.js";
 import { DetailLevel, SymbolKind } from "../enums.js";
 export const MAPPER_VERSION = 1;
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SCRIPTS_DIR = join(__dirname, "../../scripts");
+const SCRIPTS_DIR = join(__dirname, "../../../scripts");
 const GO_SOURCE = join(SCRIPTS_DIR, "go_outline.go");
 const GO_BINARY = join(SCRIPTS_DIR, "go_outline");
 
@@ -45,7 +49,7 @@ let binaryAvailable = false;
  */
 async function hasGo(): Promise<boolean> {
   try {
-    await execAsync("go version", { timeout: 5000 });
+    await execFileAsync("go", ["version"], { timeout: 5000 });
     return true;
   } catch {
     return false;
@@ -83,7 +87,7 @@ async function ensureBinary(): Promise<boolean> {
 
   try {
     // Compile the binary
-    await execAsync(`go build -o "${GO_BINARY}" "${GO_SOURCE}"`, {
+    await execFileAsync("go", ["build", "-o", GO_BINARY, GO_SOURCE], {
       timeout: 30_000,
       cwd: SCRIPTS_DIR,
     });
@@ -181,14 +185,12 @@ export async function goMapper(
     const stats = await stat(filePath);
     const totalBytes = stats.size;
 
-    // Count lines
-    const { stdout: wcOutput } = await execAsync(`wc -l < "${filePath}"`, {
-      signal,
-    });
-    const totalLines = Number.parseInt(wcOutput.trim(), 10) || 0;
+    // Count lines in JS (matches `wc -l` semantics).
+    const fileText = await readFile(filePath, "utf8");
+    const totalLines = fileText.split("\n").length - 1;
 
-    // Run Go outline script
-    const { stdout, stderr } = await execAsync(`"${GO_BINARY}" "${filePath}"`, {
+    // Run Go outline script via execFile (no shell).
+    const { stdout, stderr } = await execFileAsync(GO_BINARY, [filePath], {
       signal,
       timeout: 10_000,
     });
