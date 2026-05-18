@@ -1,6 +1,6 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { DiffData, DiffEntry, DiffSpan } from "./diff-data.js";
-import { clampLineToWidth, clampLinesToWidth, normalizeWidth, type RendererTheme } from "./tui-render-utils.js";
+import { clampLineToWidth, clampLinesToWidth, normalizeWidth, wrapWithHangingIndent, type RendererTheme } from "./tui-render-utils.js";
 
 export type TuiDiffMode = "split" | "unified" | "compact" | "summary";
 export type RenderTuiDiffInput = { diffData: DiffData; width: number; theme: RendererTheme; expanded: boolean };
@@ -24,8 +24,26 @@ function inlineText(input: RenderTuiDiffInput, index: number, entry: DiffEntry):
   if (!pair) return textOf(entry);
   return entry.kind === "remove" ? spans(input.theme, pair.removeSpans, textOf(entry)) : entry.kind === "add" ? spans(input.theme, pair.addSpans, textOf(entry)) : textOf(entry);
 }
-function unifiedRows(input: RenderTuiDiffInput): string[] { return input.diffData.entries.map((e, i) => e.kind === "meta" ? null : tint(input.theme, e, `▌${gutterMarker(e)} ${lineNo(e)} │ ${inlineText(input, i, e)}`)).filter((row): row is string => row !== null); }
-function compactRows(input: RenderTuiDiffInput): string[] { return input.diffData.entries.map((e, i) => e.kind === "add" || e.kind === "remove" ? tint(input.theme, e, `▌${gutterMarker(e)} ${lineNo(e)} ${inlineText(input, i, e)}`) : null).filter((row): row is string => row !== null); }
+function unifiedRows(input: RenderTuiDiffInput, width: number): string[] {
+  const rows: string[] = [];
+  for (const [i, e] of input.diffData.entries.entries()) {
+    if (e.kind === "meta") continue;
+    const prefix = `▌${gutterMarker(e)} ${lineNo(e)} │ `;
+    const tinted = wrapWithHangingIndent(prefix, inlineText(input, i, e), width, { tint: (text) => tint(input.theme, e, text) });
+    rows.push(...tinted);
+  }
+  return rows;
+}
+function compactRows(input: RenderTuiDiffInput, width: number): string[] {
+  const rows: string[] = [];
+  for (const [i, e] of input.diffData.entries.entries()) {
+    if (e.kind !== "add" && e.kind !== "remove") continue;
+    const prefix = `▌${gutterMarker(e)} ${lineNo(e)} `;
+    const tinted = wrapWithHangingIndent(prefix, inlineText(input, i, e), width, { tint: (text) => tint(input.theme, e, text) });
+    rows.push(...tinted);
+  }
+  return rows;
+}
 function splitRows(input: RenderTuiDiffInput, width: number): string[] {
   const pane = Math.max(10, Math.floor((width - 3) / 2));
   const rows = [`${"old".padEnd(pane)} │ new`];
@@ -46,6 +64,6 @@ export function renderTuiDiff(input: RenderTuiDiffInput): RenderTuiDiffOutput {
   const lines = [header(input.diffData, mode, width)];
   if (!input.expanded) return { mode, width, lines: clampLinesToWidth([...lines, hiddenHint(input.diffData.entries.length, hunkCount(input.diffData), width)], width) };
   if (mode === "summary") return { mode, width, lines: clampLinesToWidth(lines, width) };
-  const rows = mode === "split" ? splitRows(input, width) : mode === "compact" ? compactRows(input) : unifiedRows(input);
-  return { mode, width, lines: clampLinesToWidth([...lines, ...rows], width) };
+  const rows = mode === "split" ? splitRows(input, width) : mode === "compact" ? compactRows(input, width) : unifiedRows(input, width);
+  return { mode, width, lines: [...lines, ...rows] };
 }

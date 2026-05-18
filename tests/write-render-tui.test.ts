@@ -37,13 +37,13 @@ describe("write TUI renderer", () => {
     const cwd = mkdtempSync(resolve(tmpdir(), "pi-write-render-"));
     writeFileSync(resolve(cwd, "old.txt"), "old\n", "utf-8");
     const t = tool();
-    const createContext: any = { cwd, state: {}, invalidate: vi.fn() };
+    const createContext: any = { cwd, state: {}, invalidate: vi.fn(), expanded: true };
     const first = t.renderCall({ path: "new.txt", content: "one\ntwo" }, theme, createContext);
     const second = t.renderCall({ path: "new.txt", content: "one\ntwo" }, theme, { ...createContext, lastComponent: first });
     expect(textOf(second)).toContain("↳ pending create");
     expect(textOf(second)).toContain("↳ diff +2 -0");
 
-    const overwriteContext: any = { cwd, state: {}, invalidate: vi.fn() };
+    const overwriteContext: any = { cwd, state: {}, invalidate: vi.fn(), expanded: true };
     const third = t.renderCall({ path: "old.txt", content: "old\nnew" }, theme, overwriteContext);
     const fourth = t.renderCall({ path: "old.txt", content: "old\nnew" }, theme, { ...overwriteContext, lastComponent: third });
     expect(textOf(fourth)).toContain("↳ pending overwrite");

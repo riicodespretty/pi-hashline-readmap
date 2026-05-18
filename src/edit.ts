@@ -24,11 +24,14 @@ import { buildContextHygieneMetadata, buildFileResource, type ContextHygieneMeta
 
 const EDIT_PENDING_PREVIEW_STATE_KEY = "hashline-edit-pending-preview";
 
-function formatPendingPreviewText(summary: string, preview: PendingDiffPreviewResult | undefined, theme: any, width = 80): string {
+function formatPendingPreviewText(summary: string, preview: PendingDiffPreviewResult | undefined, theme: any, width: number | undefined, expanded: boolean): string {
 	if (!preview || preview.type !== "ok") return clampLinesToWidth(summary.split("\n"), width).join("\n");
-	const diffData = buildDiffData({ path: preview.data.filePath, oldContent: preview.data.previousContent, newContent: preview.data.nextContent, diff: preview.data.diff });
-	const text = `${summary}\n${summaryLine(preview.data.headerLabel)}\n${renderTuiDiff({ diffData, width, theme, expanded: true }).lines.join("\n")}`;
-	return clampLinesToWidth(text.split("\n"), width).join("\n");
+  const diffWidth = width ?? 80;
+  const diffData = buildDiffData({ path: preview.data.filePath, oldContent: preview.data.previousContent, newContent: preview.data.nextContent, diff: preview.data.diff });
+  const diffSummary = `${summary}\n${summaryLine(preview.data.headerLabel, { hidden: !expanded })}`;
+  if (!expanded) return clampLinesToWidth(diffSummary.split("\n"), width).join("\n");
+  const text = `${diffSummary}\n${renderTuiDiff({ diffData, width: diffWidth, theme, expanded: true }).lines.join("\n")}`;
+  return clampLinesToWidth(text.split("\n"), width).join("\n");
 }
 
 export function wrapWriteError(err: any, path: string): Error {
@@ -610,7 +613,7 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			});
 		},
 		renderCall(args: any, theme: any, ...rest: any[]) {
-			const context: { argsComplete?: boolean; lastComponent?: any; cwd?: string; state?: Record<string, any>; invalidate?: () => void; width?: number } = rest[0] ?? {};
+			const context: { argsComplete?: boolean; lastComponent?: any; cwd?: string; state?: Record<string, any>; invalidate?: () => void; width?: number; expanded?: boolean } = rest[0] ?? {};
 			const argsComplete = context.argsComplete ?? false;
 			const { path: filePath, suffix } = formatEditCallText(args, argsComplete);
 
@@ -631,7 +634,7 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				previewKey,
 				() => buildPendingEditPreviewData(args ?? {}, context.cwd ?? process.cwd()),
 			);
-			text = formatPendingPreviewText(text, preview, theme, context.width);
+			text = formatPendingPreviewText(text, preview, theme, context.width, !!context.expanded);
 			const component = context.lastComponent ?? new Text("", 0, 0);
 			component.setText(text);
 			return component;

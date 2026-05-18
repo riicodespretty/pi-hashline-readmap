@@ -19,12 +19,17 @@ import { renderTuiDiff } from "./tui-diff-renderer.js";
 
 const WRITE_PENDING_PREVIEW_STATE_KEY = "hashline-write-pending-preview";
 
-function formatPendingWritePreviewText(summary: string, preview: PendingDiffPreviewResult | undefined, theme: any, width: number | undefined): string {
+function formatPendingWritePreviewText(summary: string, preview: PendingDiffPreviewResult | undefined, theme: any, width: number | undefined, expanded: boolean): string {
   if (!preview || preview.type !== "ok") return width === undefined ? summary : clampLinesToWidth(summary.split("\n"), width).join("\n");
   const diffWidth = width ?? 80;
   const diffData = buildDiffData({ path: preview.data.filePath, oldContent: preview.data.previousContent, newContent: preview.data.nextContent, diff: preview.data.diff });
+  const headerLine = summaryLine(preview.data.headerLabel, { hidden: !expanded });
+  if (!expanded) {
+    const collapsed = [summary, headerLine];
+    return width === undefined ? collapsed.join("\n") : clampLinesToWidth(collapsed, width).join("\n");
+  }
   const diffLines = renderTuiDiff({ diffData, width: diffWidth, theme, expanded: true }).lines;
-  const lines = [summary, summaryLine(preview.data.headerLabel), ...diffLines];
+  const lines = [summary, headerLine, ...diffLines];
   return width === undefined ? lines.join("\n") : clampLinesToWidth(lines, width).join("\n");
 }
 
@@ -391,7 +396,7 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       let text = clampLineToWidth(`${label} ${theme.fg("muted", path)}${typeof content === "string" ? ` (${lineCount} ${lineCount === 1 ? "line" : "lines"} • ${bytes} B)` : ""}`, context.width);
       const previewKey = buildWritePreviewKey(args ?? {});
       const preview = resolvePendingDiffPreview(context, WRITE_PENDING_PREVIEW_STATE_KEY, previewKey, () => buildPendingWritePreviewData(args ?? {}, context.cwd ?? process.cwd()));
-      text = formatPendingWritePreviewText(text, preview, theme, context.width);
+      text = formatPendingWritePreviewText(text, preview, theme, context.width, !!context.expanded);
       const component = context.lastComponent ?? new Text("", 0, 0);
       component.setText(text);
       return component;

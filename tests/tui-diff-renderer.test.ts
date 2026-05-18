@@ -91,4 +91,35 @@ describe("renderTuiDiff", () => {
     expect(renderTuiDiff({ diffData, width: 36, theme, expanded: false }).lines.at(-1)).toMatch(/^… \(/);
     expect(renderTuiDiff({ diffData, width: 8, theme, expanded: false }).lines.at(-1)).toBe("…");
   });
+
+  it("wraps long diff rows with hanging indent instead of truncating with ellipsis", () => {
+    const longText = "the quick brown fox jumps over the lazy dog and keeps going far past the right edge";
+    const longDiffData: DiffData = {
+      version: 1,
+      entries: [
+        { kind: "remove", oldLine: 1, text: longText },
+        { kind: "add", newLine: 1, text: longText.toUpperCase() },
+        { kind: "context", oldLine: 2, newLine: 2, text: "tail" },
+      ],
+      stats: { added: 1, removed: 1, context: 1 },
+      blockRanges: [{ kind: "add", startLine: 1, endLine: 2 }],
+    };
+    const width = 60;
+    const out = renderTuiDiff({ diffData: longDiffData, width, theme: identityTheme, expanded: true });
+    expect(out.mode).toBe("unified");
+    for (const line of out.lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+    expect(out.lines.some((line) => line.endsWith("..."))).toBe(false);
+    const removeIdx = out.lines.findIndex((line) => line.startsWith("▌- 1 │ "));
+    expect(removeIdx).toBeGreaterThanOrEqual(0);
+    const indent = " ".repeat(visibleWidth("▌- 1 │ "));
+    expect(out.lines[removeIdx + 1]?.startsWith(indent)).toBe(true);
+    const reassembled = [out.lines[removeIdx]!.slice(visibleWidth("▌- 1 │ "))];
+    let cursor = removeIdx + 1;
+    while (cursor < out.lines.length && out.lines[cursor]!.startsWith(indent) && !out.lines[cursor]!.startsWith("▌")) {
+      reassembled.push(out.lines[cursor]!.slice(indent.length));
+      cursor++;
+    }
+    const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
+    expect(collapse(reassembled.join(" "))).toBe(collapse(longText));
+  });
 });

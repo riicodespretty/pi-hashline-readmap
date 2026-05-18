@@ -45,7 +45,7 @@ describe("edit TUI renderer", () => {
     writeFileSync(filePath, "const value = 1;\n", "utf-8");
     const t = tool();
     const args = { path: filePath, edits: [{ replace: { old_text: "const value = 1;", new_text: "const value = 2;" } }] };
-    const context: any = { argsComplete: false, cwd, state: {}, invalidate: vi.fn() };
+    const context: any = { argsComplete: false, cwd, state: {}, invalidate: vi.fn(), expanded: true };
     const first = t.renderCall(args, theme, context);
     await Promise.resolve();
     const second = t.renderCall(args, theme, { ...context, lastComponent: first });

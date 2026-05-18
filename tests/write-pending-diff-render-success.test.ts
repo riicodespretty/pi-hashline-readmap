@@ -21,11 +21,26 @@ const theme = {
 };
 
 describe("write renderCall pending diff preview", () => {
-	it("renders a pending overwrite preview", () => {
+	it("renders a collapsed pending overwrite preview by default", () => {
 		const cwd = mkdtempSync(resolve(tmpdir(), "pi-write-pending-success-"));
 		writeFileSync(resolve(cwd, "sample.txt"), "old value\n", "utf-8");
 		const tool = getWriteTool();
-		const context: any = { argsComplete: false, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined };
+		const context: any = { argsComplete: false, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined, expanded: false };
+
+		const rendered = tool.renderCall({ path: "sample.txt", content: "new value\n" }, theme, context);
+		const text = textOf(rendered);
+
+		expect(text).toContain("↳ pending overwrite");
+		expect(text).toContain("Ctrl+O to expand");
+		expect(text).not.toContain("↳ diff +1 -1");
+		expect(text).not.toContain("▌- 1");
+	});
+
+	it("renders the full diff body when expanded", () => {
+		const cwd = mkdtempSync(resolve(tmpdir(), "pi-write-pending-expanded-"));
+		writeFileSync(resolve(cwd, "sample.txt"), "old value\n", "utf-8");
+		const tool = getWriteTool();
+		const context: any = { argsComplete: false, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined, expanded: true };
 
 		const rendered = tool.renderCall({ path: "sample.txt", content: "new value\n" }, theme, context);
 		const text = textOf(rendered);
