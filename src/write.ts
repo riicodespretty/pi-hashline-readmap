@@ -21,8 +21,13 @@ const WRITE_PENDING_PREVIEW_STATE_KEY = "hashline-write-pending-preview";
 
 function pendingWritePreviewParts(summary: string, preview: PendingDiffPreviewResult | undefined, expanded: boolean): { lines: string[]; diffData?: DiffData } {
   if (!preview || preview.type !== "ok") return { lines: summary.split("\n") };
+  // Pure creates (write to a new file) have no "old" side and every line is an add —
+  // a diff-shaped preview is just noise. Only render diff UI when overwriting an
+  // existing file, where the diff actually carries signal.
+  const hasOldSide = preview.data.fileExistedBeforeWrite;
+  const headerLine = summaryLine(preview.data.headerLabel, { hidden: hasOldSide && !expanded });
+  if (!hasOldSide) return { lines: [summary, headerLine] };
   const diffData = buildDiffData({ path: preview.data.filePath, oldContent: preview.data.previousContent, newContent: preview.data.nextContent, diff: preview.data.diff });
-  const headerLine = summaryLine(preview.data.headerLabel, { hidden: !expanded });
   return { lines: [summary, headerLine], diffData: expanded ? diffData : undefined };
 }
 
@@ -416,8 +421,13 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       }
       const diffData = details.diffData;
       const state = details.writeState === "overwritten" ? "overwritten" : "created";
-      let text = summaryLine(state, { hidden: !!diffData && !expanded });
-      if (expanded && diffData) {
+      // Pure creates always render every line as an add — the diff body has no
+      // signal beyond "here is the new file". Suppress the diff UI (and the
+      // "Ctrl+O to expand" hint that goes with it) for creates; keep it for
+      // overwrites where the old/new comparison is informative.
+      const hasExpandableDiff = !!diffData && state === "overwritten";
+      let text = summaryLine(state, { hidden: hasExpandableDiff && !expanded });
+      if (expanded && hasExpandableDiff) {
         const diffComponent = context.lastComponent instanceof DiffPreviewComponent
           ? context.lastComponent
           : new DiffPreviewComponent({ prefixLines: text.split("\n"), diffData, theme, expanded: true });

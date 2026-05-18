@@ -13,16 +13,26 @@ describe("write TUI renderer", () => {
     const t = tool();
     expect(textOf(t.renderCall({ path: "tmp/file.txt", content: "one\ntwo\nthree" }, theme, {}))).toBe("write tmp/file.txt (3 lines • 13 B)");
     const baseDiffData = { version: 1, stats: { added: 3, removed: 0, context: 0 }, entries: [{ kind: "add", newLine: 1, text: "one" }, { kind: "add", newLine: 2, text: "two" }, { kind: "add", newLine: 3, text: "three" }] };
+    // Pure create: diff UI is suppressed — every line is an add and the gutter/line-numbers add no signal.
     const created: any = { content: [{ type: "text", text: "1:abc|one\n2:def|two\n3:aaa|three" }], details: { writeState: "created", diffData: baseDiffData, ptcValue: { tool: "write", diffData: { sentinel: true } } } };
     const before = JSON.stringify(created.details);
-    const rendered = textOf(t.renderResult(created, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }), 80);
-    expect(rendered.split("\n")[0]).toBe("↳ created");
-    expect(rendered).toContain("↳ diff +3 -0 • 1 hunk • 1 file • unified");
-    expect(rendered).toContain("▌+ 1 │ one");
+    const createdRendered = textOf(t.renderResult(created, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }), 80);
+    expect(createdRendered).toBe("↳ created");
+    expect(createdRendered).not.toContain("diff +");
+    expect(createdRendered).not.toContain("▌+");
     expect(JSON.stringify(created.details)).toBe(before);
 
-    const overwritten: any = { content: created.content, details: { ...created.details, writeState: "overwritten" } };
-    expect(textOf(t.renderResult(overwritten, {}, theme, {}))).toBe("↳ overwritten • Ctrl+O to expand");
+    // Overwrite: diff UI is preserved — the old vs new comparison still has signal.
+    const overwrittenDiffData = { version: 1, stats: { added: 1, removed: 1, context: 0 }, entries: [{ kind: "remove", oldLine: 1, text: "old" }, { kind: "add", newLine: 1, text: "new" }] };
+    const overwritten: any = { content: created.content, details: { writeState: "overwritten", diffData: overwrittenDiffData, ptcValue: { tool: "write" } } };
+    const overwrittenRendered = textOf(t.renderResult(overwritten, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }), 80);
+    expect(overwrittenRendered.split("\n")[0]).toBe("↳ overwritten");
+    expect(overwrittenRendered).toContain("↳ diff +1 -1 • 1 hunk • 1 file • unified");
+    expect(overwrittenRendered).toContain("▌- 1 │ old");
+    expect(overwrittenRendered).toContain("▌+ 1 │ new");
+
+    const collapsed: any = { content: created.content, details: { ...created.details, writeState: "overwritten", diffData: overwrittenDiffData } };
+    expect(textOf(t.renderResult(collapsed, {}, theme, {}))).toBe("↳ overwritten • Ctrl+O to expand");
   });
 
 
@@ -37,15 +47,22 @@ describe("write TUI renderer", () => {
     const cwd = mkdtempSync(resolve(tmpdir(), "pi-write-render-"));
     writeFileSync(resolve(cwd, "old.txt"), "old\n", "utf-8");
     const t = tool();
+
+    // Pending create: no diff UI — just the summary + "pending create" header.
     const createContext: any = { cwd, state: {}, invalidate: vi.fn(), expanded: true };
     const first = t.renderCall({ path: "new.txt", content: "one\ntwo" }, theme, createContext);
     const second = t.renderCall({ path: "new.txt", content: "one\ntwo" }, theme, { ...createContext, lastComponent: first });
-    expect(textOf(second)).toContain("↳ pending create");
-    expect(textOf(second)).toContain("↳ diff +2 -0");
+    const createdText = textOf(second);
+    expect(createdText).toContain("↳ pending create");
+    expect(createdText).not.toContain("diff +");
+    expect(createdText).not.toContain("▌+");
 
+    // Pending overwrite: diff UI is preserved — old vs new still carries signal.
     const overwriteContext: any = { cwd, state: {}, invalidate: vi.fn(), expanded: true };
     const third = t.renderCall({ path: "old.txt", content: "old\nnew" }, theme, overwriteContext);
     const fourth = t.renderCall({ path: "old.txt", content: "old\nnew" }, theme, { ...overwriteContext, lastComponent: third });
-    expect(textOf(fourth)).toContain("↳ pending overwrite");
+    const overwriteText = textOf(fourth);
+    expect(overwriteText).toContain("↳ pending overwrite");
+    expect(overwriteText).toContain("↳ diff +1 -0");
   });
 });

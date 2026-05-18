@@ -50,4 +50,20 @@ describe("write renderCall pending diff preview", () => {
 		expect(text).toContain("▌- 1 │ old value");
 		expect(text).toContain("▌+ 1 │ new value");
 	});
+
+	it("suppresses the diff body for pending create (pure-add) writes", () => {
+		const cwd = mkdtempSync(resolve(tmpdir(), "pi-write-pending-create-"));
+		const tool = getWriteTool();
+		const context: any = { argsComplete: false, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined, expanded: true };
+
+		const rendered = tool.renderCall({ path: "fresh.txt", content: "hello\nworld\n" }, theme, context);
+		const text = textOf(rendered);
+
+		expect(text).toContain("↳ pending create");
+		// Pure creates have no "old" side — the diff UI (header, gutters, line numbers) is suppressed.
+		expect(text).not.toContain("↳ diff +");
+		expect(text).not.toContain("▌+");
+		// And the "Ctrl+O to expand" hint shouldn't appear on either pending create line, because there is nothing more to expand into.
+		expect(text).not.toContain("Ctrl+O to expand");
+	});
 });
