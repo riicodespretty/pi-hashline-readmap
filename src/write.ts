@@ -15,22 +15,15 @@ import { buildPendingWritePreviewData, buildWritePreviewKey, resolvePendingDiffP
 import { generateCompactOrFullDiff, normalizeToLF, hasBareCarriageReturn } from "./edit-diff.js";
 import { buildDiffData, type DiffData } from "./diff-data.js";
 import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
-import { renderTuiDiff } from "./tui-diff-renderer.js";
+import { DiffPreviewComponent } from "./tui-diff-component.js";
 
 const WRITE_PENDING_PREVIEW_STATE_KEY = "hashline-write-pending-preview";
 
-function formatPendingWritePreviewText(summary: string, preview: PendingDiffPreviewResult | undefined, theme: any, width: number | undefined, expanded: boolean): string {
-  if (!preview || preview.type !== "ok") return width === undefined ? summary : clampLinesToWidth(summary.split("\n"), width).join("\n");
-  const diffWidth = width ?? 80;
+function pendingWritePreviewParts(summary: string, preview: PendingDiffPreviewResult | undefined, expanded: boolean): { lines: string[]; diffData?: DiffData } {
+  if (!preview || preview.type !== "ok") return { lines: summary.split("\n") };
   const diffData = buildDiffData({ path: preview.data.filePath, oldContent: preview.data.previousContent, newContent: preview.data.nextContent, diff: preview.data.diff });
   const headerLine = summaryLine(preview.data.headerLabel, { hidden: !expanded });
-  if (!expanded) {
-    const collapsed = [summary, headerLine];
-    return width === undefined ? collapsed.join("\n") : clampLinesToWidth(collapsed, width).join("\n");
-  }
-  const diffLines = renderTuiDiff({ diffData, width: diffWidth, theme, expanded: true }).lines;
-  const lines = [summary, headerLine, ...diffLines];
-  return width === undefined ? lines.join("\n") : clampLinesToWidth(lines, width).join("\n");
+  return { lines: [summary, headerLine], diffData: expanded ? diffData : undefined };
 }
 
 const MAX_LINES = 2000;
@@ -396,10 +389,20 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       let text = clampLineToWidth(`${label} ${theme.fg("muted", path)}${typeof content === "string" ? ` (${lineCount} ${lineCount === 1 ? "line" : "lines"} • ${bytes} B)` : ""}`, context.width);
       const previewKey = buildWritePreviewKey(args ?? {});
       const preview = resolvePendingDiffPreview(context, WRITE_PENDING_PREVIEW_STATE_KEY, previewKey, () => buildPendingWritePreviewData(args ?? {}, context.cwd ?? process.cwd()));
-      text = formatPendingWritePreviewText(text, preview, theme, context.width, !!context.expanded);
-      const component = context.lastComponent ?? new Text("", 0, 0);
-      component.setText(text);
-      return component;
+      const expanded = !!context.expanded;
+      const parts = pendingWritePreviewParts(text, preview, expanded);
+      if (parts.diffData) {
+        const diffComponent = context.lastComponent instanceof DiffPreviewComponent
+          ? context.lastComponent
+          : new DiffPreviewComponent({ prefixLines: parts.lines, diffData: parts.diffData, theme, expanded: true });
+        diffComponent.update({ prefixLines: parts.lines, diffData: parts.diffData, theme, expanded: true });
+        return diffComponent;
+      }
+      const textComponent = (context.lastComponent && !(context.lastComponent instanceof DiffPreviewComponent))
+        ? context.lastComponent
+        : new Text("", 0, 0);
+      textComponent.setText(clampLinesToWidth(parts.lines, context.width).join("\n"));
+      return textComponent;
     },
     renderResult(result: any, options: any, theme: any, context: any = {}) {
       const expanded = isRendererExpanded(options, context);
@@ -414,7 +417,13 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       const diffData = details.diffData;
       const state = details.writeState === "overwritten" ? "overwritten" : "created";
       let text = summaryLine(state, { hidden: !!diffData && !expanded });
-      if (expanded && diffData) text += "\n" + renderTuiDiff({ diffData, width, theme, expanded: true }).lines.join("\n");
+      if (expanded && diffData) {
+        const diffComponent = context.lastComponent instanceof DiffPreviewComponent
+          ? context.lastComponent
+          : new DiffPreviewComponent({ prefixLines: text.split("\n"), diffData, theme, expanded: true });
+        diffComponent.update({ prefixLines: text.split("\n"), diffData, theme, expanded: true });
+        return diffComponent;
+      }
       return new Text(clampLinesToWidth(text.split("\n"), width).join("\n"), 0, 0);
     },
   };

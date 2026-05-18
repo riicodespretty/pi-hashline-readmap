@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { registerWriteTool } from "../src/write.js";
 
 const theme = { fg: (_: string, text: string) => text, bold: (text: string) => text };
-function textOf(component: any): string { return component?.text ?? component?.render?.(120)?.join("\n") ?? ""; }
+function textOf(component: any, width = 120): string { return component?.text ?? component?.render?.(width)?.join("\n") ?? ""; }
 function tool(): any { let registered: any; registerWriteTool({ registerTool(def: any) { registered = def; } } as any, {} as any); return registered; }
 
 describe("write TUI renderer", () => {
@@ -15,7 +15,7 @@ describe("write TUI renderer", () => {
     const baseDiffData = { version: 1, stats: { added: 3, removed: 0, context: 0 }, entries: [{ kind: "add", newLine: 1, text: "one" }, { kind: "add", newLine: 2, text: "two" }, { kind: "add", newLine: 3, text: "three" }] };
     const created: any = { content: [{ type: "text", text: "1:abc|one\n2:def|two\n3:aaa|three" }], details: { writeState: "created", diffData: baseDiffData, ptcValue: { tool: "write", diffData: { sentinel: true } } } };
     const before = JSON.stringify(created.details);
-    const rendered = textOf(t.renderResult(created, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }));
+    const rendered = textOf(t.renderResult(created, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }), 80);
     expect(rendered.split("\n")[0]).toBe("↳ created");
     expect(rendered).toContain("↳ diff +3 -0 • 1 hunk • 1 file • unified");
     expect(rendered).toContain("▌+ 1 │ one");
