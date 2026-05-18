@@ -122,4 +122,39 @@ describe("renderTuiDiff", () => {
     const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
     expect(collapse(reassembled.join(" "))).toBe(collapse(longText));
   });
+
+  it("falls back to unified mode for pure-add diffs even when the pane is wide enough for split", () => {
+    const pureAdd: DiffData = {
+      version: 1,
+      entries: [
+        { kind: "add", newLine: 1, text: "first added line" },
+        { kind: "add", newLine: 2, text: "second added line" },
+        { kind: "add", newLine: 3, text: "third added line" },
+      ],
+      stats: { added: 3, removed: 0, context: 0 },
+      blockRanges: [{ kind: "add", startLine: 1, endLine: 3 }],
+    };
+    const out = renderTuiDiff({ diffData: pureAdd, width: 160, theme: identityTheme, expanded: true });
+    expect(out.mode).toBe("unified");
+    const text = out.lines.join("\n");
+    expect(text).toContain("▌+ 1 │ first added line");
+    expect(text).not.toMatch(/^old\s+│ new$/m);
+  });
+
+  it("split mode tints add/remove/context rows on both panes", () => {
+    const colorTheme = {
+      fg: (kind: string, text: string) => `<${kind}>${text}</${kind}>`,
+      bold: (text: string) => text,
+    } as any;
+    const out = renderTuiDiff({ diffData: markerDiffData, width: 140, theme: colorTheme, expanded: true });
+    expect(out.mode).toBe("split");
+    const text = out.lines.join("\n");
+    // remove row appears tinted on the left pane
+    expect(text).toMatch(/<error>[^<]*▌- 1 │ one[^<]*<\/error>/);
+    // add row appears tinted on the right pane
+    expect(text).toMatch(/<success>[^<]*▌\+ 1 │ ONE[^<]*<\/success>/);
+    // context row is tinted with toolOutput on both sides
+    const contextMatches = text.match(/<toolOutput>[^<]*▌\s{2}2 │ two[^<]*<\/toolOutput>/g) ?? [];
+    expect(contextMatches.length).toBeGreaterThanOrEqual(2);
+  });
 });
