@@ -410,6 +410,18 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       const lineCount = typeof content === "string" ? content.split("\n").length : 0;
       const bytes = typeof content === "string" ? Buffer.byteLength(content, "utf8") : 0;
       let text = clampLineToWidth(`${label} ${theme.fg("muted", path)}${typeof content === "string" ? ` (${lineCount} ${lineCount === 1 ? "line" : "lines"} • ${bytes} B)` : ""}`, context.width);
+      // Once execution has started, the pending preview's only job is done:
+      // renderResult will carry the story ("↳ created" / "↳ overwritten" with
+      // expandable content or diff). Showing the "↳ pending…" sub-line and
+      // its preview alongside the final result is just duplicate noise — the
+      // pre-execution state can no longer change in any meaningful way.
+      if (context.executionStarted) {
+        const textComponent = (context.lastComponent && !(context.lastComponent instanceof DiffPreviewComponent))
+          ? context.lastComponent
+          : new Text("", 0, 0);
+        textComponent.setText(text);
+        return textComponent;
+      }
       const previewKey = buildWritePreviewKey(args ?? {});
       const preview = resolvePendingDiffPreview(context, WRITE_PENDING_PREVIEW_STATE_KEY, previewKey, () => buildPendingWritePreviewData(args ?? {}, context.cwd ?? process.cwd()));
       const expanded = !!context.expanded;

@@ -81,4 +81,33 @@ describe("write TUI renderer", () => {
     expect(overwriteText).toContain("↳ pending overwrite");
     expect(overwriteText).toContain("↳ diff +1 -0");
   });
+
+  it("collapses the pending preview to just the call line once execution has started", () => {
+    const cwd = mkdtempSync(resolve(tmpdir(), "pi-write-exec-collapse-"));
+    writeFileSync(resolve(cwd, "old.txt"), "old\n", "utf-8");
+    const t = tool();
+
+    // Before execution: pending preview is visible (with content for create, diff for overwrite).
+    const beforeCreate: any = { cwd, state: {}, invalidate: vi.fn(), expanded: true, argsComplete: true, executionStarted: false };
+    const beforeCreateText = textOf(t.renderCall({ path: "new.txt", content: "one\ntwo" }, theme, beforeCreate));
+    expect(beforeCreateText).toContain("↳ pending create");
+
+    const beforeOverwrite: any = { cwd, state: {}, invalidate: vi.fn(), expanded: true, argsComplete: true, executionStarted: false };
+    const beforeOverwriteText = textOf(t.renderCall({ path: "old.txt", content: "old\nnew" }, theme, beforeOverwrite));
+    expect(beforeOverwriteText).toContain("↳ pending overwrite");
+
+    // After execution starts: the call row drops the pending preview entirely.
+    // renderResult is responsible for the post-exec story (↳ created / ↳ overwritten).
+    const afterCreate: any = { cwd, state: {}, invalidate: vi.fn(), expanded: true, argsComplete: true, executionStarted: true };
+    const afterCreateText = textOf(t.renderCall({ path: "new.txt", content: "one\ntwo" }, theme, afterCreate));
+    expect(afterCreateText).toBe("write new.txt (2 lines • 7 B)");
+    expect(afterCreateText).not.toContain("pending");
+    expect(afterCreateText).not.toContain("  one");
+
+    const afterOverwrite: any = { cwd, state: {}, invalidate: vi.fn(), expanded: true, argsComplete: true, executionStarted: true };
+    const afterOverwriteText = textOf(t.renderCall({ path: "old.txt", content: "old\nnew" }, theme, afterOverwrite));
+    expect(afterOverwriteText).toBe("write old.txt (2 lines • 7 B)");
+    expect(afterOverwriteText).not.toContain("pending");
+    expect(afterOverwriteText).not.toContain("diff +");
+  });
 });

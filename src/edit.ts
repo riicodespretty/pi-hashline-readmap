@@ -610,7 +610,7 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			});
 		},
 		renderCall(args: any, theme: any, ...rest: any[]) {
-			const context: { argsComplete?: boolean; lastComponent?: any; cwd?: string; state?: Record<string, any>; invalidate?: () => void; width?: number; expanded?: boolean } = rest[0] ?? {};
+			const context: { argsComplete?: boolean; executionStarted?: boolean; lastComponent?: any; cwd?: string; state?: Record<string, any>; invalidate?: () => void; width?: number; expanded?: boolean } = rest[0] ?? {};
 			const argsComplete = context.argsComplete ?? false;
 			const { path: filePath, suffix } = formatEditCallText(args, argsComplete);
 
@@ -624,6 +624,17 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				text += ` ${theme.fg("dim", suffix)}`;
 			}
 			text = clampLineToWidth(text, context.width);
+			// Once execution has started, the pending preview's only job is done:
+			// renderResult will carry the story ("↳ edited +N -M" with the same
+			// expandable diff). Keeping the "↳ pending edit" sub-line and its
+			// preview alongside the final result is just duplicate noise.
+			if (context.executionStarted) {
+				const textComponent = (context.lastComponent && !(context.lastComponent instanceof DiffPreviewComponent))
+					? context.lastComponent
+					: new Text("", 0, 0);
+				textComponent.setText(text);
+				return textComponent;
+			}
 			const previewKey = buildEditPreviewKey(args ?? {});
 			const preview = resolvePendingDiffPreview(
 				context,
