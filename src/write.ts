@@ -19,14 +19,32 @@ import { DiffPreviewComponent } from "./tui-diff-component.js";
 
 const WRITE_PENDING_PREVIEW_STATE_KEY = "hashline-write-pending-preview";
 
+const CONTENT_PREVIEW_MAX_LINES = 200;
+
+function formatContentPreviewLines(content: string): string[] {
+  const lines = content.split("\n");
+  // Drop the single trailing blank produced by a terminal newline so the
+  // preview reads naturally.
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  const indented = lines.slice(0, CONTENT_PREVIEW_MAX_LINES).map((line) => `  ${line}`);
+  if (lines.length > CONTENT_PREVIEW_MAX_LINES) {
+    indented.push(`  … ${lines.length - CONTENT_PREVIEW_MAX_LINES} more lines not shown`);
+  }
+  return indented;
+}
+
 function pendingWritePreviewParts(summary: string, preview: PendingDiffPreviewResult | undefined, expanded: boolean): { lines: string[]; diffData?: DiffData } {
   if (!preview || preview.type !== "ok") return { lines: summary.split("\n") };
-  // Pure creates (write to a new file) have no "old" side and every line is an add —
-  // a diff-shaped preview is just noise. Only render diff UI when overwriting an
-  // existing file, where the diff actually carries signal.
+  // Pure creates (write to a new file) have no "old" side, so a diff-shaped
+  // preview is just noise. Show the new file's content (indented, no gutter,
+  // no line numbers, no colors) when expanded; otherwise just a Ctrl+O hint.
   const hasOldSide = preview.data.fileExistedBeforeWrite;
-  const headerLine = summaryLine(preview.data.headerLabel, { hidden: hasOldSide && !expanded });
-  if (!hasOldSide) return { lines: [summary, headerLine] };
+  const headerLine = summaryLine(preview.data.headerLabel, { hidden: !expanded });
+  if (!hasOldSide) {
+    const lines = [summary, headerLine];
+    if (expanded) lines.push(...formatContentPreviewLines(preview.data.nextContent));
+    return { lines };
+  }
   const diffData = buildDiffData({ path: preview.data.filePath, oldContent: preview.data.previousContent, newContent: preview.data.nextContent, diff: preview.data.diff });
   return { lines: [summary, headerLine], diffData: expanded ? diffData : undefined };
 }
@@ -421,11 +439,22 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       }
       const diffData = details.diffData;
       const state = details.writeState === "overwritten" ? "overwritten" : "created";
-      // Pure creates always render every line as an add — the diff body has no
-      // signal beyond "here is the new file". Suppress the diff UI (and the
-      // "Ctrl+O to expand" hint that goes with it) for creates; keep it for
-      // overwrites where the old/new comparison is informative.
-      const hasExpandableDiff = !!diffData && state === "overwritten";
+      // Pure creates: render the new file's contents on expand (no diff chrome)
+      // instead of a diff body — every line is an add, so the gutter, line
+      // numbers, and red/green tinting are noise.
+      if (state === "created") {
+        const ptcLines = (details.ptcValue?.lines ?? []) as Array<{ raw: string }>;
+        const hasContent = ptcLines.length > 0;
+        const header = summaryLine(state, { hidden: hasContent && !expanded });
+        const lines = header.split("\n");
+        if (expanded && hasContent) {
+          const content = ptcLines.map((l) => l.raw).join("\n");
+          lines.push(...formatContentPreviewLines(content));
+        }
+        return new Text(clampLinesToWidth(lines, width).join("\n"), 0, 0);
+      }
+      // Overwrite: the old vs new comparison still carries signal — keep the diff UI.
+      const hasExpandableDiff = !!diffData;
       let text = summaryLine(state, { hidden: hasExpandableDiff && !expanded });
       if (expanded && hasExpandableDiff) {
         const diffComponent = context.lastComponent instanceof DiffPreviewComponent

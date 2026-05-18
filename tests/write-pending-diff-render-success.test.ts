@@ -54,16 +54,23 @@ describe("write renderCall pending diff preview", () => {
 	it("suppresses the diff body for pending create (pure-add) writes", () => {
 		const cwd = mkdtempSync(resolve(tmpdir(), "pi-write-pending-create-"));
 		const tool = getWriteTool();
-		const context: any = { argsComplete: false, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined, expanded: true };
 
-		const rendered = tool.renderCall({ path: "fresh.txt", content: "hello\nworld\n" }, theme, context);
-		const text = textOf(rendered);
+		// Collapsed: just the "pending create" header with a Ctrl+O hint. No diff header, no body, no file contents.
+		const collapsedContext: any = { argsComplete: false, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined, expanded: false };
+		const collapsed = textOf(tool.renderCall({ path: "fresh.txt", content: "hello\nworld\n" }, theme, collapsedContext));
+		expect(collapsed).toContain("↳ pending create");
+		expect(collapsed).toContain("Ctrl+O to expand");
+		expect(collapsed).not.toContain("↳ diff +");
+		expect(collapsed).not.toContain("▌+");
+		expect(collapsed).not.toContain("hello");
 
-		expect(text).toContain("↳ pending create");
-		// Pure creates have no "old" side — the diff UI (header, gutters, line numbers) is suppressed.
-		expect(text).not.toContain("↳ diff +");
-		expect(text).not.toContain("▌+");
-		// And the "Ctrl+O to expand" hint shouldn't appear on either pending create line, because there is nothing more to expand into.
-		expect(text).not.toContain("Ctrl+O to expand");
+		// Expanded: the new file's contents are shown indented (no gutter, no line numbers, no colors).
+		const expandedContext: any = { argsComplete: false, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined, expanded: true };
+		const expanded = textOf(tool.renderCall({ path: "fresh.txt", content: "hello\nworld\n" }, theme, expandedContext));
+		expect(expanded).toContain("↳ pending create");
+		expect(expanded).toContain("  hello");
+		expect(expanded).toContain("  world");
+		expect(expanded).not.toContain("↳ diff +");
+		expect(expanded).not.toContain("▌+");
 	});
 });

@@ -13,13 +13,27 @@ describe("write TUI renderer", () => {
     const t = tool();
     expect(textOf(t.renderCall({ path: "tmp/file.txt", content: "one\ntwo\nthree" }, theme, {}))).toBe("write tmp/file.txt (3 lines • 13 B)");
     const baseDiffData = { version: 1, stats: { added: 3, removed: 0, context: 0 }, entries: [{ kind: "add", newLine: 1, text: "one" }, { kind: "add", newLine: 2, text: "two" }, { kind: "add", newLine: 3, text: "three" }] };
-    // Pure create: diff UI is suppressed — every line is an add and the gutter/line-numbers add no signal.
-    const created: any = { content: [{ type: "text", text: "1:abc|one\n2:def|two\n3:aaa|three" }], details: { writeState: "created", diffData: baseDiffData, ptcValue: { tool: "write", diffData: { sentinel: true } } } };
+    // Pure create: diff UI is suppressed — every line is an add. The expanded
+    // form shows the new file's contents indented (no gutter, no line numbers,
+    // no colors).
+    const createdPtcLines = [
+      { line: 1, hash: "abc", anchor: "1:abc", raw: "one", display: "one" },
+      { line: 2, hash: "def", anchor: "2:def", raw: "two", display: "two" },
+      { line: 3, hash: "aaa", anchor: "3:aaa", raw: "three", display: "three" },
+    ];
+    const created: any = { content: [{ type: "text", text: "1:abc|one\n2:def|two\n3:aaa|three" }], details: { writeState: "created", diffData: baseDiffData, ptcValue: { tool: "write", diffData: { sentinel: true }, lines: createdPtcLines } } };
     const before = JSON.stringify(created.details);
-    const createdRendered = textOf(t.renderResult(created, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }), 80);
-    expect(createdRendered).toBe("↳ created");
-    expect(createdRendered).not.toContain("diff +");
-    expect(createdRendered).not.toContain("▌+");
+
+    const createdCollapsed = textOf(t.renderResult(created, {}, theme, {}), 80);
+    expect(createdCollapsed).toBe("↳ created • Ctrl+O to expand");
+
+    const createdExpanded = textOf(t.renderResult(created, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }), 80);
+    expect(createdExpanded.split("\n")[0]).toBe("↳ created");
+    expect(createdExpanded).toContain("  one");
+    expect(createdExpanded).toContain("  two");
+    expect(createdExpanded).toContain("  three");
+    expect(createdExpanded).not.toContain("diff +");
+    expect(createdExpanded).not.toContain("▌+");
     expect(JSON.stringify(created.details)).toBe(before);
 
     // Overwrite: diff UI is preserved — the old vs new comparison still has signal.
@@ -48,12 +62,14 @@ describe("write TUI renderer", () => {
     writeFileSync(resolve(cwd, "old.txt"), "old\n", "utf-8");
     const t = tool();
 
-    // Pending create: no diff UI — just the summary + "pending create" header.
+    // Pending create: no diff UI — expanded shows the new content indented.
     const createContext: any = { cwd, state: {}, invalidate: vi.fn(), expanded: true };
     const first = t.renderCall({ path: "new.txt", content: "one\ntwo" }, theme, createContext);
     const second = t.renderCall({ path: "new.txt", content: "one\ntwo" }, theme, { ...createContext, lastComponent: first });
     const createdText = textOf(second);
     expect(createdText).toContain("↳ pending create");
+    expect(createdText).toContain("  one");
+    expect(createdText).toContain("  two");
     expect(createdText).not.toContain("diff +");
     expect(createdText).not.toContain("▌+");
 
