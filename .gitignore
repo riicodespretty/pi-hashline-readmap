@@ -64,6 +64,9 @@ TOOL_TESTING_REPORT*.md
 USER_REALISTIC_TESTING_REPORT*.md
 .tmp-verify/
 
+# Compiled outline helpers (sources are tracked; binaries are not)
+scripts/go_outline
+
 # ── GSD baseline (auto-generated) ──
 .gsd
 *.code-workspace
