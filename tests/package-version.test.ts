@@ -5,9 +5,9 @@ const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 const packageLock = JSON.parse(readFileSync("package-lock.json", "utf8"));
 
 describe("package version", () => {
-  it("is bumped for the triage cleanup bugfix release", () => {
-    expect(packageJson.version).toBe("0.8.11");
-    expect(packageLock.version).toBe("0.8.11");
-    expect(packageLock.packages[""].version).toBe("0.8.11");
+  it("is bumped for the tree-sitter install-hang fix release", () => {
+    expect(packageJson.version).toBe("0.8.12");
+    expect(packageLock.version).toBe("0.8.12");
+    expect(packageLock.packages[""].version).toBe("0.8.12");
   });
 });
