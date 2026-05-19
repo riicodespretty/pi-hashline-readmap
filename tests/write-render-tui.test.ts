@@ -110,4 +110,30 @@ describe("write TUI renderer", () => {
     expect(afterOverwriteText).not.toContain("pending");
     expect(afterOverwriteText).not.toContain("diff +");
   });
+
+  it("renders the create content preview when theme.fg uses `this` (regression: bind theme.fg)", () => {
+    // Real pi themes implement Theme.fg as a method on a class instance that
+    // reads `this.fgColors`. If the renderer extracts `theme.fg` without
+    // binding, calling it standalone crashes with "Cannot read properties of
+    // undefined (reading 'fgColors')". This stub mimics that contract.
+    class MethodTheme {
+      tag: string;
+      constructor() { this.tag = "truecolor"; }
+      fg(style: string, text: string) { if (!this.tag) throw new TypeError("this is undefined"); return `[${style}]${text}[/${style}]`; }
+      bold(text: string) { return text; }
+    }
+    const methodTheme: any = new MethodTheme();
+    const t = tool();
+    const ptcLines = [
+      { line: 1, hash: "abc", anchor: "1:abc", raw: "one", display: "one" },
+      { line: 2, hash: "def", anchor: "2:def", raw: "two", display: "two" },
+    ];
+    const created: any = { content: [{ type: "text", text: "1:abc|one\n2:def|two" }], details: { writeState: "created", ptcValue: { tool: "write", lines: ptcLines } } };
+    let rendered: any;
+    expect(() => { rendered = t.renderResult(created, { expanded: true, width: 80 }, methodTheme, { expanded: true, width: 80 }); }).not.toThrow();
+    const out = textOf(rendered, 80);
+    expect(out).toContain("↳ created");
+    expect(out).toContain("[dim]1 │ [/dim]one");
+    expect(out).toContain("[dim]2 │ [/dim]two");
+  });
 });

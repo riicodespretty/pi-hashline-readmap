@@ -32,7 +32,9 @@ function formatContentPreviewLines(content: string, theme: any): string[] {
   // "↳ created / pending create" header above it without re-introducing
   // diff chrome (no +/- marker, no red/green tint).
   const width = String(shown.length).length;
-  const fg = theme?.fg ?? ((_style: string, text: string) => text);
+  // Bind theme.fg so we keep its `this` (the Theme uses internal state); fall back
+  // to an identity tint when no theme is provided (e.g. in tests).
+  const fg = typeof theme?.fg === "function" ? (style: string, text: string) => theme.fg(style, text) : (_style: string, text: string) => text;
   const formatted = shown.map((line, index) => {
     const gutter = fg("dim", `${String(index + 1).padStart(width, " ")} │ `);
     return `  ${gutter}${line}`;
