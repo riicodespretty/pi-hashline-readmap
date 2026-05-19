@@ -21,28 +21,38 @@ const WRITE_PENDING_PREVIEW_STATE_KEY = "hashline-write-pending-preview";
 
 const CONTENT_PREVIEW_MAX_LINES = 200;
 
-function formatContentPreviewLines(content: string): string[] {
+function formatContentPreviewLines(content: string, theme: any): string[] {
   const lines = content.split("\n");
   // Drop the single trailing blank produced by a terminal newline so the
   // preview reads naturally.
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-  const indented = lines.slice(0, CONTENT_PREVIEW_MAX_LINES).map((line) => `  ${line}`);
+  const shown = lines.slice(0, CONTENT_PREVIEW_MAX_LINES);
+  // Right-align line numbers so the body has a stable column for the content.
+  // The dim gutter ("  N │ ") visually distinguishes the body from the
+  // "↳ created / pending create" header above it without re-introducing
+  // diff chrome (no +/- marker, no red/green tint).
+  const width = String(shown.length).length;
+  const fg = theme?.fg ?? ((_style: string, text: string) => text);
+  const formatted = shown.map((line, index) => {
+    const gutter = fg("dim", `${String(index + 1).padStart(width, " ")} │ `);
+    return `  ${gutter}${line}`;
+  });
   if (lines.length > CONTENT_PREVIEW_MAX_LINES) {
-    indented.push(`  … ${lines.length - CONTENT_PREVIEW_MAX_LINES} more lines not shown`);
+    formatted.push(`  ${fg("dim", `… ${lines.length - CONTENT_PREVIEW_MAX_LINES} more lines not shown`)}`);
   }
-  return indented;
+  return formatted;
 }
 
-function pendingWritePreviewParts(summary: string, preview: PendingDiffPreviewResult | undefined, expanded: boolean): { lines: string[]; diffData?: DiffData } {
+function pendingWritePreviewParts(summary: string, preview: PendingDiffPreviewResult | undefined, expanded: boolean, theme: any): { lines: string[]; diffData?: DiffData } {
   if (!preview || preview.type !== "ok") return { lines: summary.split("\n") };
   // Pure creates (write to a new file) have no "old" side, so a diff-shaped
-  // preview is just noise. Show the new file's content (indented, no gutter,
-  // no line numbers, no colors) when expanded; otherwise just a Ctrl+O hint.
+  // preview is just noise. Show the new file's content with a dim gutter of
+  // line numbers when expanded; otherwise just a Ctrl+O hint.
   const hasOldSide = preview.data.fileExistedBeforeWrite;
   const headerLine = summaryLine(preview.data.headerLabel, { hidden: !expanded });
   if (!hasOldSide) {
     const lines = [summary, headerLine];
-    if (expanded) lines.push(...formatContentPreviewLines(preview.data.nextContent));
+    if (expanded) lines.push(...formatContentPreviewLines(preview.data.nextContent, theme));
     return { lines };
   }
   const diffData = buildDiffData({ path: preview.data.filePath, oldContent: preview.data.previousContent, newContent: preview.data.nextContent, diff: preview.data.diff });
@@ -425,7 +435,7 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       const previewKey = buildWritePreviewKey(args ?? {});
       const preview = resolvePendingDiffPreview(context, WRITE_PENDING_PREVIEW_STATE_KEY, previewKey, () => buildPendingWritePreviewData(args ?? {}, context.cwd ?? process.cwd()));
       const expanded = !!context.expanded;
-      const parts = pendingWritePreviewParts(text, preview, expanded);
+      const parts = pendingWritePreviewParts(text, preview, expanded, theme);
       if (parts.diffData) {
         const diffComponent = context.lastComponent instanceof DiffPreviewComponent
           ? context.lastComponent
@@ -461,7 +471,7 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
         const lines = header.split("\n");
         if (expanded && hasContent) {
           const content = ptcLines.map((l) => l.raw).join("\n");
-          lines.push(...formatContentPreviewLines(content));
+          lines.push(...formatContentPreviewLines(content, theme));
         }
         return new Text(clampLinesToWidth(lines, width).join("\n"), 0, 0);
       }

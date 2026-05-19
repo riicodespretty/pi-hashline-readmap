@@ -29,9 +29,9 @@ describe("write TUI renderer", () => {
 
     const createdExpanded = textOf(t.renderResult(created, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }), 80);
     expect(createdExpanded.split("\n")[0]).toBe("↳ created");
-    expect(createdExpanded).toContain("  one");
-    expect(createdExpanded).toContain("  two");
-    expect(createdExpanded).toContain("  three");
+    expect(createdExpanded).toContain("  1 │ one");
+    expect(createdExpanded).toContain("  2 │ two");
+    expect(createdExpanded).toContain("  3 │ three");
     expect(createdExpanded).not.toContain("diff +");
     expect(createdExpanded).not.toContain("▌+");
     expect(JSON.stringify(created.details)).toBe(before);
@@ -68,8 +68,8 @@ describe("write TUI renderer", () => {
     const second = t.renderCall({ path: "new.txt", content: "one\ntwo" }, theme, { ...createContext, lastComponent: first });
     const createdText = textOf(second);
     expect(createdText).toContain("↳ pending create");
-    expect(createdText).toContain("  one");
-    expect(createdText).toContain("  two");
+    expect(createdText).toContain("  1 │ one");
+    expect(createdText).toContain("  2 │ two");
     expect(createdText).not.toContain("diff +");
     expect(createdText).not.toContain("▌+");
 

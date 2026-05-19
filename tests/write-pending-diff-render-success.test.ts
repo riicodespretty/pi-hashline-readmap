@@ -68,8 +68,8 @@ describe("write renderCall pending diff preview", () => {
 		const expandedContext: any = { argsComplete: false, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined, expanded: true };
 		const expanded = textOf(tool.renderCall({ path: "fresh.txt", content: "hello\nworld\n" }, theme, expandedContext));
 		expect(expanded).toContain("↳ pending create");
-		expect(expanded).toContain("  hello");
-		expect(expanded).toContain("  world");
+		expect(expanded).toContain("  1 │ hello");
+		expect(expanded).toContain("  2 │ world");
 		expect(expanded).not.toContain("↳ diff +");
 		expect(expanded).not.toContain("▌+");
 	});
