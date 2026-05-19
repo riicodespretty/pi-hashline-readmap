@@ -1,6 +1,6 @@
 {
   "name": "pi-hashline-readmap",
-  "version": "0.8.11",
+  "version": "0.8.12",
   "description": "Unified pi extension: hash-anchored read/edit/grep, structural code maps, AST-grep, file exploration (ls/find), and bash output compression",
   "type": "module",
   "exports": {
@@ -30,7 +30,13 @@
     "prompts/",
     "LICENSE",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "node_modules/tree-sitter",
+    "node_modules/tree-sitter-c",
+    "node_modules/tree-sitter-cpp",
+    "node_modules/tree-sitter-java",
+    "node_modules/tree-sitter-rust",
+    "node_modules/tree-sitter-clojure"
   ],
   "scripts": {
     "test": "vitest run",
@@ -67,12 +73,12 @@
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
   },
-  "overrides": {
-    "tree-sitter-cpp": {
-      "tree-sitter": "0.22.4"
-    },
-    "tree-sitter-java": {
-      "tree-sitter": "0.22.4"
-    }
-  }
+  "bundledDependencies": [
+    "tree-sitter",
+    "tree-sitter-c",
+    "tree-sitter-cpp",
+    "tree-sitter-java",
+    "tree-sitter-rust",
+    "tree-sitter-clojure"
+  ]
 }
