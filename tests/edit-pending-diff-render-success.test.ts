@@ -21,12 +21,31 @@ const theme = {
 };
 
 describe("edit renderCall pending diff preview", () => {
-	it("renders a pending edit preview", async () => {
+	it("renders a collapsed pending edit preview by default", async () => {
 		const cwd = mkdtempSync(resolve(tmpdir(), "pi-edit-pending-success-"));
 		const filePath = resolve(cwd, "sample.ts");
 		writeFileSync(filePath, "const unique = 1;\n", "utf-8");
 		const tool = getEditTool();
-		const context: any = { argsComplete: false, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined };
+		const context: any = { argsComplete: false, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined, expanded: false };
+		const args = { path: filePath, edits: [{ replace: { old_text: "const unique = 1;", new_text: "const unique = 2;" } }] };
+
+		const first = tool.renderCall(args, theme, context);
+		await Promise.resolve();
+		const second = tool.renderCall(args, theme, { ...context, lastComponent: first });
+		const rendered = textOf(second);
+
+		expect(rendered).toContain("pending edit");
+		expect(rendered).toContain("Ctrl+O to expand");
+		expect(rendered).not.toContain("↳ diff +1 -1");
+		expect(rendered).not.toContain("▌+ 1");
+	});
+
+	it("renders the full diff body when expanded", async () => {
+		const cwd = mkdtempSync(resolve(tmpdir(), "pi-edit-pending-expanded-"));
+		const filePath = resolve(cwd, "sample.ts");
+		writeFileSync(filePath, "const unique = 1;\n", "utf-8");
+		const tool = getEditTool();
+		const context: any = { argsComplete: false, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined, expanded: true };
 		const args = { path: filePath, edits: [{ replace: { old_text: "const unique = 1;", new_text: "const unique = 2;" } }] };
 
 		const first = tool.renderCall(args, theme, context);
@@ -37,5 +56,31 @@ describe("edit renderCall pending diff preview", () => {
 		expect(rendered).toContain("pending edit");
 		expect(rendered).toContain("↳ diff +1 -1");
 		expect(rendered).toContain("▌+ 1 │ const unique = 2;");
+	});
+
+	it("collapses the pending preview to just the call line once execution has started", async () => {
+		const cwd = mkdtempSync(resolve(tmpdir(), "pi-edit-exec-collapse-"));
+		const filePath = resolve(cwd, "sample.ts");
+		writeFileSync(filePath, "const unique = 1;\n", "utf-8");
+		const tool = getEditTool();
+		const args = { path: filePath, edits: [{ replace: { old_text: "const unique = 1;", new_text: "const unique = 2;" } }] };
+
+		// Before execution: pending preview with the full diff visible.
+		const before: any = { argsComplete: true, executionStarted: false, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined, expanded: true };
+		const beforeFirst = tool.renderCall(args, theme, before);
+		await Promise.resolve();
+		const beforeSecond = tool.renderCall(args, theme, { ...before, lastComponent: beforeFirst });
+		const beforeText = textOf(beforeSecond);
+		expect(beforeText).toContain("pending edit");
+		expect(beforeText).toContain("↳ diff +1 -1");
+
+		// After execution starts: the call row drops the pending preview — renderResult will
+		// carry the post-exec story (↳ edited +N -M with the same expandable diff).
+		const after: any = { argsComplete: true, executionStarted: true, cwd, state: {}, invalidate: vi.fn(), lastComponent: undefined, expanded: true };
+		const afterRendered = textOf(tool.renderCall(args, theme, after));
+		expect(afterRendered).toContain("edit");
+		expect(afterRendered).not.toContain("pending");
+		expect(afterRendered).not.toContain("↳ diff +");
+		expect(afterRendered).not.toContain("▌");
 	});
 });

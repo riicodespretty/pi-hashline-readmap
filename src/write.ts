@@ -15,17 +15,50 @@ import { buildPendingWritePreviewData, buildWritePreviewKey, resolvePendingDiffP
 import { generateCompactOrFullDiff, normalizeToLF, hasBareCarriageReturn } from "./edit-diff.js";
 import { buildDiffData, type DiffData } from "./diff-data.js";
 import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
-import { renderTuiDiff } from "./tui-diff-renderer.js";
+import { DiffPreviewComponent } from "./tui-diff-component.js";
 
 const WRITE_PENDING_PREVIEW_STATE_KEY = "hashline-write-pending-preview";
 
-function formatPendingWritePreviewText(summary: string, preview: PendingDiffPreviewResult | undefined, theme: any, width: number | undefined): string {
-  if (!preview || preview.type !== "ok") return width === undefined ? summary : clampLinesToWidth(summary.split("\n"), width).join("\n");
-  const diffWidth = width ?? 80;
+const CONTENT_PREVIEW_MAX_LINES = 200;
+
+function formatContentPreviewLines(content: string, theme: any): string[] {
+  const lines = content.split("\n");
+  // Drop the single trailing blank produced by a terminal newline so the
+  // preview reads naturally.
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  const shown = lines.slice(0, CONTENT_PREVIEW_MAX_LINES);
+  // Right-align line numbers so the body has a stable column for the content.
+  // The dim gutter ("  N │ ") visually distinguishes the body from the
+  // "↳ created / pending create" header above it without re-introducing
+  // diff chrome (no +/- marker, no red/green tint).
+  const width = String(shown.length).length;
+  // Bind theme.fg so we keep its `this` (the Theme uses internal state); fall back
+  // to an identity tint when no theme is provided (e.g. in tests).
+  const fg = typeof theme?.fg === "function" ? (style: string, text: string) => theme.fg(style, text) : (_style: string, text: string) => text;
+  const formatted = shown.map((line, index) => {
+    const gutter = fg("dim", `${String(index + 1).padStart(width, " ")} │ `);
+    return `  ${gutter}${line}`;
+  });
+  if (lines.length > CONTENT_PREVIEW_MAX_LINES) {
+    formatted.push(`  ${fg("dim", `… ${lines.length - CONTENT_PREVIEW_MAX_LINES} more lines not shown`)}`);
+  }
+  return formatted;
+}
+
+function pendingWritePreviewParts(summary: string, preview: PendingDiffPreviewResult | undefined, expanded: boolean, theme: any): { lines: string[]; diffData?: DiffData } {
+  if (!preview || preview.type !== "ok") return { lines: summary.split("\n") };
+  // Pure creates (write to a new file) have no "old" side, so a diff-shaped
+  // preview is just noise. Show the new file's content with a dim gutter of
+  // line numbers when expanded; otherwise just a Ctrl+O hint.
+  const hasOldSide = preview.data.fileExistedBeforeWrite;
+  const headerLine = summaryLine(preview.data.headerLabel, { hidden: !expanded });
+  if (!hasOldSide) {
+    const lines = [summary, headerLine];
+    if (expanded) lines.push(...formatContentPreviewLines(preview.data.nextContent, theme));
+    return { lines };
+  }
   const diffData = buildDiffData({ path: preview.data.filePath, oldContent: preview.data.previousContent, newContent: preview.data.nextContent, diff: preview.data.diff });
-  const diffLines = renderTuiDiff({ diffData, width: diffWidth, theme, expanded: true }).lines;
-  const lines = [summary, summaryLine(preview.data.headerLabel), ...diffLines];
-  return width === undefined ? lines.join("\n") : clampLinesToWidth(lines, width).join("\n");
+  return { lines: [summary, headerLine], diffData: expanded ? diffData : undefined };
 }
 
 const MAX_LINES = 2000;
@@ -389,12 +422,34 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       const lineCount = typeof content === "string" ? content.split("\n").length : 0;
       const bytes = typeof content === "string" ? Buffer.byteLength(content, "utf8") : 0;
       let text = clampLineToWidth(`${label} ${theme.fg("muted", path)}${typeof content === "string" ? ` (${lineCount} ${lineCount === 1 ? "line" : "lines"} • ${bytes} B)` : ""}`, context.width);
+      // Once execution has started, the pending preview's only job is done:
+      // renderResult will carry the story ("↳ created" / "↳ overwritten" with
+      // expandable content or diff). Showing the "↳ pending…" sub-line and
+      // its preview alongside the final result is just duplicate noise — the
+      // pre-execution state can no longer change in any meaningful way.
+      if (context.executionStarted) {
+        const textComponent = (context.lastComponent && !(context.lastComponent instanceof DiffPreviewComponent))
+          ? context.lastComponent
+          : new Text("", 0, 0);
+        textComponent.setText(text);
+        return textComponent;
+      }
       const previewKey = buildWritePreviewKey(args ?? {});
       const preview = resolvePendingDiffPreview(context, WRITE_PENDING_PREVIEW_STATE_KEY, previewKey, () => buildPendingWritePreviewData(args ?? {}, context.cwd ?? process.cwd()));
-      text = formatPendingWritePreviewText(text, preview, theme, context.width);
-      const component = context.lastComponent ?? new Text("", 0, 0);
-      component.setText(text);
-      return component;
+      const expanded = !!context.expanded;
+      const parts = pendingWritePreviewParts(text, preview, expanded, theme);
+      if (parts.diffData) {
+        const diffComponent = context.lastComponent instanceof DiffPreviewComponent
+          ? context.lastComponent
+          : new DiffPreviewComponent({ prefixLines: parts.lines, diffData: parts.diffData, theme, expanded: true });
+        diffComponent.update({ prefixLines: parts.lines, diffData: parts.diffData, theme, expanded: true });
+        return diffComponent;
+      }
+      const textComponent = (context.lastComponent && !(context.lastComponent instanceof DiffPreviewComponent))
+        ? context.lastComponent
+        : new Text("", 0, 0);
+      textComponent.setText(clampLinesToWidth(parts.lines, context.width).join("\n"));
+      return textComponent;
     },
     renderResult(result: any, options: any, theme: any, context: any = {}) {
       const expanded = isRendererExpanded(options, context);
@@ -408,8 +463,30 @@ export function registerWriteTool(pi: ExtensionAPI, options: WriteToolOptions = 
       }
       const diffData = details.diffData;
       const state = details.writeState === "overwritten" ? "overwritten" : "created";
-      let text = summaryLine(state, { hidden: !!diffData && !expanded });
-      if (expanded && diffData) text += "\n" + renderTuiDiff({ diffData, width, theme, expanded: true }).lines.join("\n");
+      // Pure creates: render the new file's contents on expand (no diff chrome)
+      // instead of a diff body — every line is an add, so the gutter, line
+      // numbers, and red/green tinting are noise.
+      if (state === "created") {
+        const ptcLines = (details.ptcValue?.lines ?? []) as Array<{ raw: string }>;
+        const hasContent = ptcLines.length > 0;
+        const header = summaryLine(state, { hidden: hasContent && !expanded });
+        const lines = header.split("\n");
+        if (expanded && hasContent) {
+          const content = ptcLines.map((l) => l.raw).join("\n");
+          lines.push(...formatContentPreviewLines(content, theme));
+        }
+        return new Text(clampLinesToWidth(lines, width).join("\n"), 0, 0);
+      }
+      // Overwrite: the old vs new comparison still carries signal — keep the diff UI.
+      const hasExpandableDiff = !!diffData;
+      let text = summaryLine(state, { hidden: hasExpandableDiff && !expanded });
+      if (expanded && hasExpandableDiff) {
+        const diffComponent = context.lastComponent instanceof DiffPreviewComponent
+          ? context.lastComponent
+          : new DiffPreviewComponent({ prefixLines: text.split("\n"), diffData, theme, expanded: true });
+        diffComponent.update({ prefixLines: text.split("\n"), diffData, theme, expanded: true });
+        return diffComponent;
+      }
       return new Text(clampLinesToWidth(text.split("\n"), width).join("\n"), 0, 0);
     },
   };

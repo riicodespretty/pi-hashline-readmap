@@ -5,14 +5,14 @@ import { tmpdir } from "node:os";
 import { registerEditTool } from "../src/edit.js";
 
 const theme = { fg: (_: string, text: string) => text, bold: (text: string) => text };
-function textOf(component: any): string { return component?.text ?? component?.render?.(120)?.join("\n") ?? ""; }
+function textOf(component: any, width = 120): string { return component?.text ?? component?.render?.(width)?.join("\n") ?? ""; }
 function tool(): any { let registered: any; registerEditTool({ registerTool(def: any) { registered = def; } } as any, { wasReadInSession: () => true } as any); return registered; }
 
 describe("edit TUI renderer", () => {
   it("shows edit summary before final diff and preserves model-facing data", () => {
     const result: any = { content: [{ type: "text", text: "1:abc|one\n2:def|TWO" }], details: { diff: "-2 two\n+2 TWO", diffData: { version: 1, stats: { added: 1, removed: 1, context: 0 }, entries: [{ kind: "remove", oldLine: 2, text: "two" }, { kind: "add", newLine: 2, text: "TWO" }] }, ptcValue: { warnings: [], noopEdits: [], semanticSummary: { classification: "semantic" }, diffData: { sentinel: true } } } };
     const before = JSON.stringify(result.details);
-    const rendered = textOf(tool().renderResult(result, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }));
+    const rendered = textOf(tool().renderResult(result, { expanded: true, width: 80 }, theme, { expanded: true, width: 80 }), 80);
     expect(rendered.split("\n")[0]).toBe("↳ edited +1 -1 • semantic");
     expect(rendered).toContain("↳ diff +1 -1 • 1 hunk • 1 file • unified");
     expect(rendered).toContain("▌+ 2 │ TWO");
@@ -45,7 +45,7 @@ describe("edit TUI renderer", () => {
     writeFileSync(filePath, "const value = 1;\n", "utf-8");
     const t = tool();
     const args = { path: filePath, edits: [{ replace: { old_text: "const value = 1;", new_text: "const value = 2;" } }] };
-    const context: any = { argsComplete: false, cwd, state: {}, invalidate: vi.fn() };
+    const context: any = { argsComplete: false, cwd, state: {}, invalidate: vi.fn(), expanded: true };
     const first = t.renderCall(args, theme, context);
     await Promise.resolve();
     const second = t.renderCall(args, theme, { ...context, lastComponent: first });

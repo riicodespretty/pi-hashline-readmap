@@ -45,8 +45,9 @@ describe("owned renderer expanded and width coverage", () => {
     const editText = textOf(edit.renderResult({ content: [{ type: "text", text: "1:abc|new" }], details: { diffData: { version: 1, stats: { added: 1, removed: 0, context: 0 }, entries: [{ kind: "add", newLine: 1, text: "new" }] }, ptcValue: { warnings: [], noopEdits: [], semanticSummary: { classification: "semantic" } } } }, { expanded: true }, theme, { expanded: true }), 80);
     expect(editText).toContain("↳ diff +1 -0");
 
-    const writeText = textOf(write.renderResult({ content: [{ type: "text", text: "1:abc|new" }], details: { writeState: "created", diffData: { version: 1, stats: { added: 1, removed: 0, context: 0 }, entries: [{ kind: "add", newLine: 1, text: "new" }] } } }, { expanded: true }, theme, { expanded: true }), 80);
-    expect(writeText).toContain("↳ diff +1 -0");
+    // Pure create has no diff UI — every line is an add. Use overwritten state to exercise the diff renderer.
+    const writeText = textOf(write.renderResult({ content: [{ type: "text", text: "1:abc|new" }], details: { writeState: "overwritten", diffData: { version: 1, stats: { added: 1, removed: 1, context: 0 }, entries: [{ kind: "remove", oldLine: 1, text: "old" }, { kind: "add", newLine: 1, text: "new" }] } } }, { expanded: true }, theme, { expanded: true }), 80);
+    expect(writeText).toContain("↳ diff +1 -1");
 
     const nuText = textOf(nu.renderResult({ content: [{ type: "text", text: "row\nsecond" }] }, { expanded: true }, theme, { expanded: true }), 80);
     expect(nuText).toContain("second");
@@ -86,7 +87,7 @@ describe("owned renderer expanded and width coverage", () => {
       textOf(renderers.edit.renderCall({ path: "src/very/long/path/edit-target.ts", edits: [{ replace: { old_text: "old", new_text: "new" } }] }, theme, { width, argsComplete: true }), width),
       textOf(renderers.edit.renderResult({ content: [{ type: "text", text: "1:abc|new" }], details: { diffData: { version: 1, stats: { added: 1, removed: 0, context: 0 }, entries: [{ kind: "add", newLine: 1, text: "new value with a long tail" }] }, ptcValue: { warnings: [], noopEdits: [] } } }, { expanded: true, width }, theme, { expanded: true, width }), width),
       textOf(renderers.write.renderCall({ path: "src/very/long/path/write-target.ts", content: "one\ntwo" }, theme, { width }), width),
-      textOf(renderers.write.renderResult({ content: [{ type: "text", text: "1:abc|new" }], details: { writeState: "created", diffData: { version: 1, stats: { added: 1, removed: 0, context: 0 }, entries: [{ kind: "add", newLine: 1, text: "new value with a long tail" }] } } }, { expanded: true, width }, theme, { expanded: true, width }), width),
+      textOf(renderers.write.renderResult({ content: [{ type: "text", text: "1:abc|new" }], details: { writeState: "overwritten", diffData: { version: 1, stats: { added: 1, removed: 1, context: 0 }, entries: [{ kind: "remove", oldLine: 1, text: "old value with a long tail" }, { kind: "add", newLine: 1, text: "new value with a long tail" }] } } }, { expanded: true, width }, theme, { expanded: true, width }), width),
       textOf(renderers.nu.renderCall({ command: "ls | where name =~ very-long-pattern" }, theme, { width }), width),
       textOf(renderers.nu.renderResult({ content: [{ type: "text", text: "very long output row" }] }, { expanded: true, width }, theme, { expanded: true, width }), width),
       textOf(renderers.sg.renderCall({ pattern: "console.log($VERY_LONG_ARGUMENT)", path: "src/very/long/path", lang: "typescript" }, theme, { width }), width),

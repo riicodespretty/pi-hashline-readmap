@@ -19,16 +19,16 @@ import { replaceSymbol } from "./replace-symbol.js";
 import { buildEditPreviewKey, buildPendingEditPreviewData, resolvePendingDiffPreview, type PendingDiffPreviewResult } from "./pending-diff-preview.js";
 import { buildDiffData, type DiffBlockRange } from "./diff-data.js";
 import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, summaryLine } from "./tui-render-utils.js";
-import { renderTuiDiff } from "./tui-diff-renderer.js";
+import { DiffPreviewComponent } from "./tui-diff-component.js";
 import { buildContextHygieneMetadata, buildFileResource, type ContextHygieneMetadata } from "./context-hygiene.js";
 
 const EDIT_PENDING_PREVIEW_STATE_KEY = "hashline-edit-pending-preview";
 
-function formatPendingPreviewText(summary: string, preview: PendingDiffPreviewResult | undefined, theme: any, width = 80): string {
-	if (!preview || preview.type !== "ok") return clampLinesToWidth(summary.split("\n"), width).join("\n");
+function pendingPreviewLines(summary: string, preview: PendingDiffPreviewResult | undefined, expanded: boolean): { lines: string[]; diffData?: ReturnType<typeof buildDiffData>; headerLabel?: string } {
+	if (!preview || preview.type !== "ok") return { lines: summary.split("\n") };
 	const diffData = buildDiffData({ path: preview.data.filePath, oldContent: preview.data.previousContent, newContent: preview.data.nextContent, diff: preview.data.diff });
-	const text = `${summary}\n${summaryLine(preview.data.headerLabel)}\n${renderTuiDiff({ diffData, width, theme, expanded: true }).lines.join("\n")}`;
-	return clampLinesToWidth(text.split("\n"), width).join("\n");
+	const headerLine = summaryLine(preview.data.headerLabel, { hidden: !expanded });
+	return { lines: [summary, headerLine], diffData: expanded ? diffData : undefined, headerLabel: preview.data.headerLabel };
 }
 
 export function wrapWriteError(err: any, path: string): Error {
@@ -610,7 +610,7 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 			});
 		},
 		renderCall(args: any, theme: any, ...rest: any[]) {
-			const context: { argsComplete?: boolean; lastComponent?: any; cwd?: string; state?: Record<string, any>; invalidate?: () => void; width?: number } = rest[0] ?? {};
+			const context: { argsComplete?: boolean; executionStarted?: boolean; lastComponent?: any; cwd?: string; state?: Record<string, any>; invalidate?: () => void; width?: number; expanded?: boolean } = rest[0] ?? {};
 			const argsComplete = context.argsComplete ?? false;
 			const { path: filePath, suffix } = formatEditCallText(args, argsComplete);
 
@@ -624,6 +624,17 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				text += ` ${theme.fg("dim", suffix)}`;
 			}
 			text = clampLineToWidth(text, context.width);
+			// Once execution has started, the pending preview's only job is done:
+			// renderResult will carry the story ("↳ edited +N -M" with the same
+			// expandable diff). Keeping the "↳ pending edit" sub-line and its
+			// preview alongside the final result is just duplicate noise.
+			if (context.executionStarted) {
+				const textComponent = (context.lastComponent && !(context.lastComponent instanceof DiffPreviewComponent))
+					? context.lastComponent
+					: new Text("", 0, 0);
+				textComponent.setText(text);
+				return textComponent;
+			}
 			const previewKey = buildEditPreviewKey(args ?? {});
 			const preview = resolvePendingDiffPreview(
 				context,
@@ -631,10 +642,20 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				previewKey,
 				() => buildPendingEditPreviewData(args ?? {}, context.cwd ?? process.cwd()),
 			);
-			text = formatPendingPreviewText(text, preview, theme, context.width);
-			const component = context.lastComponent ?? new Text("", 0, 0);
-			component.setText(text);
-			return component;
+			const expanded = !!context.expanded;
+			const preview2 = pendingPreviewLines(text, preview, expanded);
+			if (preview2.diffData) {
+				const diffComponent = context.lastComponent instanceof DiffPreviewComponent
+					? context.lastComponent
+					: new DiffPreviewComponent({ prefixLines: preview2.lines, diffData: preview2.diffData, theme, expanded: true });
+				diffComponent.update({ prefixLines: preview2.lines, diffData: preview2.diffData, theme, expanded: true });
+				return diffComponent;
+			}
+			const textComponent = (context.lastComponent && !(context.lastComponent instanceof DiffPreviewComponent))
+				? context.lastComponent
+				: new Text("", 0, 0);
+			textComponent.setText(clampLinesToWidth(preview2.lines, context.width).join("\n"));
+			return textComponent;
 		},
 			renderResult(result: any, options: ToolRenderResultOptions, theme: any, ...rest: any[]) {
 			const context: { isPartial?: boolean; isError?: boolean; expanded?: boolean; lastComponent?: any; width?: number } =
@@ -688,7 +709,13 @@ export function registerEditTool(pi: ExtensionAPI, options: EditToolOptions = {}
 				if (info.semanticBadge) badges.push(info.semanticBadge.replace(/^✓\s*/, ""));
 				if (info.warningsBadge) badges.push(info.warningsBadge);
 				text = summaryLine(badges.join(" • "), { hidden: !!diffData && !expanded });
-				if (expanded && diffData) text += "\n" + renderTuiDiff({ diffData, width, theme, expanded: true }).lines.join("\n");
+				if (expanded && diffData) {
+					const diffComponent = context.lastComponent instanceof DiffPreviewComponent
+						? context.lastComponent
+						: new DiffPreviewComponent({ prefixLines: text.split("\n"), diffData, theme, expanded: true });
+					diffComponent.update({ prefixLines: text.split("\n"), diffData, theme, expanded: true });
+					return diffComponent;
+				}
 			}
 			return new Text(clampLinesToWidth(text.split("\n"), width).join("\n"), 0, 0);
 		},
