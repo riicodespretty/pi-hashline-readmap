@@ -4,12 +4,14 @@ import { readFile, stat } from "node:fs/promises";
  *
  * Ported from codemap's symbols-cpp.ts.
  */
-import { createRequire } from "node:module";
+import type { Node as SyntaxNode, Tree } from "web-tree-sitter";
 
 import type { FileMap, FileSymbol } from "../types.js";
 
 import { DetailLevel, SymbolKind } from "../enums.js";
-export const MAPPER_VERSION = 1;
+import { getWasmParser } from "../parser-loader.js";
+import { reportParserError } from "../parser-errors.js";
+export const MAPPER_VERSION = 2;
 
 type ScopeKind = "namespace" | "class" | "struct" | "enum";
 type AccessLevel = "public" | "protected" | "private";
@@ -32,63 +34,16 @@ interface InternalSymbol {
   docstring?: string;
 }
 
-// Lazy-loaded parser
-let parser: import("tree-sitter") | null = null;
-let parserInitialized = false;
-
-function ensureWritableTypeProperty(parserCtor: unknown): void {
-  const syntaxNode = (parserCtor as { SyntaxNode?: { prototype?: object } })
-    .SyntaxNode;
-  const proto = syntaxNode?.prototype;
-  if (!proto) {
-    return;
-  }
-  const desc = Object.getOwnPropertyDescriptor(proto, "type");
-  if (!desc || desc.set) {
-    return;
-  }
-  Object.defineProperty(proto, "type", { ...desc, set: () => {} });
-}
-
-function getParser(): import("tree-sitter") | null {
-  if (parserInitialized) {
-    return parser;
-  }
-
-  parserInitialized = true;
-
-  // Check if running in Bun (tree-sitter has issues with Bun)
-  const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
-  if (isBun) {
-    return null;
-  }
-
-  try {
-    const require = createRequire(import.meta.url);
-    const ParserCtor = require("tree-sitter") as typeof import("tree-sitter");
-    const CPP = require("tree-sitter-cpp") as import("tree-sitter").Language;
-    ensureWritableTypeProperty(ParserCtor);
-    parser = new ParserCtor();
-    parser.setLanguage(CPP);
-    return parser;
-  } catch {
-    return null;
-  }
-}
-
 function normalizeWhitespace(value: string): string {
   return value.replaceAll(/\s+/g, " ").trim();
 }
 
-function getNodeText(
-  node: import("tree-sitter").SyntaxNode,
-  source: string
-): string {
+function getNodeText(node: SyntaxNode, source: string): string {
   return source.slice(node.startIndex, node.endIndex);
 }
 
 function formatSignature(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   source: string,
   templatePrefix?: string
 ): string {
@@ -106,10 +61,11 @@ function formatSignature(
 }
 
 function findDescendantOfType(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   type: string
-): import("tree-sitter").SyntaxNode | null {
+): SyntaxNode | null {
   for (const child of node.namedChildren) {
+    if (!child) continue;
     if (child.type === type) {
       return child;
     }
@@ -122,9 +78,9 @@ function findDescendantOfType(
 }
 
 function findFirstDescendant(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   types: string[]
-): import("tree-sitter").SyntaxNode | null {
+): SyntaxNode | null {
   for (const type of types) {
     const found = findDescendantOfType(node, type);
     if (found) {
@@ -135,11 +91,14 @@ function findFirstDescendant(
 }
 
 function collectDescendants(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   type: string
-): import("tree-sitter").SyntaxNode[] {
-  const results: import("tree-sitter").SyntaxNode[] = [];
-  const stack = [...node.namedChildren];
+): SyntaxNode[] {
+  const results: SyntaxNode[] = [];
+  const stack: SyntaxNode[] = [];
+  for (const child of node.namedChildren) {
+    if (child) stack.push(child);
+  }
   while (stack.length > 0) {
     const current = stack.pop();
     if (!current) {
@@ -149,7 +108,7 @@ function collectDescendants(
       results.push(current);
     }
     for (const child of current.namedChildren) {
-      stack.push(child);
+      if (child) stack.push(child);
     }
   }
   return results;
@@ -187,7 +146,7 @@ function makeAnonymousName(kind: string, line: number): string {
   return `<anonymous@${kind}:${line}>`;
 }
 
-function getLineRange(node: import("tree-sitter").SyntaxNode): {
+function getLineRange(node: SyntaxNode): {
   startLine: number;
   endLine: number;
 } {
@@ -202,7 +161,7 @@ function isStaticSignature(signature: string): boolean {
 }
 
 function extractTypedefName(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   source: string
 ): string | null {
   const identifiers = [...collectDescendants(node, "identifier")].sort(
@@ -216,7 +175,7 @@ function extractTypedefName(
 }
 
 function extractAliasName(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   source: string
 ): string | null {
   const nameNode =
@@ -226,7 +185,7 @@ function extractAliasName(
 }
 
 function extractSpecifierName(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   source: string,
   pattern: RegExp
 ): string | null {
@@ -241,7 +200,7 @@ function extractSpecifierName(
 }
 
 function extractFunctionName(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   source: string
 ): string | null {
   const declarator = node.childForFieldName("declarator") ?? node;
@@ -272,7 +231,7 @@ function extractFunctionName(
 }
 
 function collectFieldNames(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   source: string
 ): string[] {
   const names = collectDescendants(node, "field_identifier").map((child) =>
@@ -298,7 +257,7 @@ function collectFieldNames(
  * Handles /// and /** styles.
  */
 function extractDocComment(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   source: string
 ): string | undefined {
   let prev = node.previousNamedSibling;
@@ -340,19 +299,7 @@ function extractDocComment(
 /**
  * Extract C++ symbols using tree-sitter.
  */
-function extractCppSymbols(content: string): InternalSymbol[] {
-  const p = getParser();
-  if (!p) {
-    return [];
-  }
-
-  let tree: import("tree-sitter").Tree;
-  try {
-    tree = p.parse(content);
-  } catch {
-    return [];
-  }
-
+function extractCppSymbols(root: SyntaxNode, content: string): InternalSymbol[] {
   const symbols: InternalSymbol[] = [];
   const scopeStack: Scope[] = [];
   const classKeys = new Set<string>();
@@ -381,7 +328,7 @@ function extractCppSymbols(content: string): InternalSymbol[] {
   };
 
   const handleNamespace = (
-    node: import("tree-sitter").SyntaxNode,
+    node: SyntaxNode,
     templatePrefix?: string
   ): void => {
     const signature = formatSignature(node, content, templatePrefix);
@@ -407,16 +354,16 @@ function extractCppSymbols(content: string): InternalSymbol[] {
     pushScope({ kind: "namespace", name: cleanName, key });
     const body =
       node.childForFieldName("body") ??
-      node.namedChildren.find((child) => child.type === "declaration_list");
+      node.namedChildren.find((child) => child?.type === "declaration_list") ?? null;
     const children = body ? body.namedChildren : node.namedChildren;
     for (const child of children) {
-      visit(child);
+      if (child) visit(child);
     }
     popScope();
   };
 
   const handleClass = (
-    node: import("tree-sitter").SyntaxNode,
+    node: SyntaxNode,
     kind: "class" | "struct",
     templatePrefix?: string
   ): void => {
@@ -450,17 +397,17 @@ function extractCppSymbols(content: string): InternalSymbol[] {
     const body =
       node.childForFieldName("body") ??
       node.namedChildren.find((child) =>
-        ["field_declaration_list", "declaration_list"].includes(child.type)
-      );
+        !!child && ["field_declaration_list", "declaration_list"].includes(child.type)
+      ) ?? null;
     const children = body ? body.namedChildren : node.namedChildren;
     for (const child of children) {
-      visit(child);
+      if (child) visit(child);
     }
     popScope();
   };
 
   const handleEnum = (
-    node: import("tree-sitter").SyntaxNode,
+    node: SyntaxNode,
     templatePrefix?: string
   ): void => {
     const signature = formatSignature(node, content, templatePrefix);
@@ -508,7 +455,7 @@ function extractCppSymbols(content: string): InternalSymbol[] {
   };
 
   const handleTypedef = (
-    node: import("tree-sitter").SyntaxNode,
+    node: SyntaxNode,
     templatePrefix?: string
   ): void => {
     const signature = formatSignature(node, content, templatePrefix);
@@ -538,7 +485,7 @@ function extractCppSymbols(content: string): InternalSymbol[] {
   };
 
   const handleAlias = (
-    node: import("tree-sitter").SyntaxNode,
+    node: SyntaxNode,
     templatePrefix?: string
   ): void => {
     const signature = formatSignature(node, content, templatePrefix);
@@ -563,7 +510,7 @@ function extractCppSymbols(content: string): InternalSymbol[] {
   };
 
   const handleFunction = (
-    node: import("tree-sitter").SyntaxNode,
+    node: SyntaxNode,
     templatePrefix?: string
   ): void => {
     const signature = formatSignature(node, content, templatePrefix);
@@ -618,7 +565,7 @@ function extractCppSymbols(content: string): InternalSymbol[] {
     });
   };
 
-  const handleField = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleField = (node: SyntaxNode): void => {
     const classScope = currentClassScope();
     if (!classScope) {
       return;
@@ -645,9 +592,7 @@ function extractCppSymbols(content: string): InternalSymbol[] {
     }
   };
 
-  const handleAccessSpecifier = (
-    node: import("tree-sitter").SyntaxNode
-  ): void => {
+  const handleAccessSpecifier = (node: SyntaxNode): void => {
     const classScope = currentClassScope();
     if (!classScope) {
       return;
@@ -665,12 +610,11 @@ function extractCppSymbols(content: string): InternalSymbol[] {
     }
   };
 
-  const isFunctionDeclaration = (
-    node: import("tree-sitter").SyntaxNode
-  ): boolean => Boolean(findDescendantOfType(node, "function_declarator"));
+  const isFunctionDeclaration = (node: SyntaxNode): boolean =>
+    Boolean(findDescendantOfType(node, "function_declarator"));
 
   const visit = (
-    node: import("tree-sitter").SyntaxNode,
+    node: SyntaxNode,
     templatePrefix?: string
   ): void => {
     switch (node.type) {
@@ -679,6 +623,7 @@ function extractCppSymbols(content: string): InternalSymbol[] {
           node.childForFieldName("declaration") ??
           node.childForFieldName("definition") ??
           node.namedChildren.find((child) =>
+            !!child &&
             [
               "function_definition",
               "declaration",
@@ -751,11 +696,11 @@ function extractCppSymbols(content: string): InternalSymbol[] {
     }
 
     for (const child of node.namedChildren) {
-      visit(child);
+      if (child) visit(child);
     }
   };
 
-  visit(tree.rootNode);
+  visit(root);
 
   return symbols;
 }
@@ -862,12 +807,10 @@ export async function cppMapper(
   filePath: string,
   signal?: AbortSignal
 ): Promise<FileMap | null> {
+  const parser = await getWasmParser("cpp");
+  if (!parser) return null;
+  let tree: Tree | null = null;
   try {
-    // Check if parser is available
-    if (!getParser()) {
-      return null;
-    }
-
     const stats = await stat(filePath);
     const totalBytes = stats.size;
 
@@ -879,8 +822,9 @@ export async function cppMapper(
       return null;
     }
 
-    // Extract symbols
-    const internalSymbols = extractCppSymbols(content);
+    tree = parser.parse(content);
+    if (!tree) return null;
+    const internalSymbols = extractCppSymbols(tree.rootNode, content);
 
     if (internalSymbols.length === 0) {
       return null;
@@ -899,11 +843,13 @@ export async function cppMapper(
       imports: [],
       detailLevel: DetailLevel.Full,
     };
-  } catch (error) {
-    if (signal?.aborted) {
-      return null;
-    }
-    console.error(`C++ mapper failed: ${error}`);
+  } catch (err) {
+    reportParserError(`wasm:parse:cpp:${err instanceof Error ? err.message : String(err)}`, err, {
+      context: "C++ tree-sitter parse failed",
+    });
     return null;
+  } finally {
+    tree?.delete();
+    parser.delete();
   }
 }

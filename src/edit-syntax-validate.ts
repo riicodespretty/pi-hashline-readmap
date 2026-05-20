@@ -1,6 +1,7 @@
-import { createRequire } from "node:module";
-
+import type { Node as SyntaxNode, Parser as WasmParser, Tree } from "web-tree-sitter";
 import { detectLanguage } from "./readmap/language-detect.js";
+import { getWasmParser } from "./readmap/parser-loader.js";
+import { reportParserError } from "./readmap/parser-errors.js";
 
 export interface ValidateInput {
   filePath: string;
@@ -19,84 +20,41 @@ interface NodeStats {
   missing: Array<{ startLine: number; endLine: number }>;
 }
 
-const require_ = createRequire(import.meta.url);
-
-const PARSER_MODULES: Record<string, string> = {
-  rust: "tree-sitter-rust",
-  cpp: "tree-sitter-cpp",
-  "c-header": "tree-sitter-cpp",
-  java: "tree-sitter-java",
-  clojure: "tree-sitter-clojure",
-};
-
-const parserCache = new Map<string, import("tree-sitter") | null>();
-
-function ensureWritableTypeProperty(parserCtor: unknown): void {
-  const syntaxNode = (parserCtor as { SyntaxNode?: { prototype?: object } }).SyntaxNode;
-  const proto = syntaxNode?.prototype;
-  if (!proto) return;
-  const desc = Object.getOwnPropertyDescriptor(proto, "type");
-  if (!desc || desc.set) return;
-  Object.defineProperty(proto, "type", { ...desc, set: () => {} });
-}
-
-function getParser(filePath: string): import("tree-sitter") | null {
-  const lang = detectLanguage(filePath);
-  if (!lang) return null;
-  const mod = PARSER_MODULES[lang.id];
-  if (!mod) return null; // Task 3: unsupported language returns null
-  if (parserCache.has(lang.id)) return parserCache.get(lang.id) ?? null;
-
-  const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
-  if (isBun) {
-    parserCache.set(lang.id, null);
-    return null;
-  }
-
-  try {
-    const ParserCtor = require_("tree-sitter") as typeof import("tree-sitter");
-    const Lang = require_(mod) as import("tree-sitter").Language;
-    ensureWritableTypeProperty(ParserCtor);
-    const parser = new ParserCtor();
-    parser.setLanguage(Lang);
-    parserCache.set(lang.id, parser);
-    return parser;
-  } catch {
-    parserCache.set(lang.id, null);
-    return null;
-  }
-}
-
-function countNodes(parser: import("tree-sitter"), source: string): NodeStats {
-  const tree = parser.parse(source);
+function countNodes(parser: WasmParser, source: string): NodeStats {
+  const tree: Tree | null = parser.parse(source);
   const errors: Array<{ startLine: number; endLine: number }> = [];
   const missing: Array<{ startLine: number; endLine: number }> = [];
-  const stack: import("tree-sitter").SyntaxNode[] = [tree.rootNode];
-  while (stack.length > 0) {
-    const node = stack.pop()!;
-    if (node.type === "ERROR") {
-      errors.push({
-        startLine: node.startPosition.row + 1,
-        endLine: node.endPosition.row + 1,
-      });
+  if (!tree) return { errors, missing };
+  try {
+    const stack: SyntaxNode[] = [tree.rootNode];
+    while (stack.length > 0) {
+      const node = stack.pop()!;
+      if (node.type === "ERROR") {
+        errors.push({
+          startLine: node.startPosition.row + 1,
+          endLine: node.endPosition.row + 1,
+        });
+      }
+      if (node.isMissing) {
+        missing.push({
+          startLine: node.startPosition.row + 1,
+          endLine: node.endPosition.row + 1,
+        });
+      }
+      for (let i = 0; i < node.namedChildCount; i++) {
+        const c = node.namedChild(i);
+        if (c) stack.push(c);
+      }
+      // Also descend into anonymous children to find MISSING tokens.
+      for (let i = 0; i < node.childCount; i++) {
+        const c = node.child(i);
+        if (c && !c.isNamed) stack.push(c);
+      }
     }
-    if (node.isMissing) {
-      missing.push({
-        startLine: node.startPosition.row + 1,
-        endLine: node.endPosition.row + 1,
-      });
-    }
-    for (let i = 0; i < node.namedChildCount; i++) {
-      const c = node.namedChild(i);
-      if (c) stack.push(c);
-    }
-    // Also descend into anonymous children to find MISSING tokens.
-    for (let i = 0; i < node.childCount; i++) {
-      const c = node.child(i);
-      if (c && !c.isNamed) stack.push(c);
-    }
+    return { errors, missing };
+  } finally {
+    tree.delete();
   }
-  return { errors, missing };
 }
 
 function dedupeSortLines(
@@ -120,29 +78,43 @@ function dedupeSortLines(
 export async function validateSyntaxRegression(
   input: ValidateInput,
 ): Promise<ValidateResult | null> {
-  const parser = getParser(input.filePath);
+  const lang = detectLanguage(input.filePath);
+  if (!lang) return null;
+  if (lang.id !== "rust" && lang.id !== "cpp" && lang.id !== "c-header" && lang.id !== "java") {
+    return null;
+  }
+  const parser = await getWasmParser(lang.id);
   if (!parser) return null;
 
-  const beforeStats = input.before === undefined
-    ? { errors: [], missing: [] }
-    : countNodes(parser, input.before);
-  const afterStats = countNodes(parser, input.after);
+  try {
+    const beforeStats = input.before === undefined
+      ? { errors: [], missing: [] }
+      : countNodes(parser, input.before);
+    const afterStats = countNodes(parser, input.after);
 
-  // ±1 tolerance on ERROR count, no tolerance on MISSING.
-  const newErrorCount = Math.max(
-    0,
-    afterStats.errors.length - beforeStats.errors.length - 1,
-  );
-  const newMissingCount = Math.max(
-    0,
-    afterStats.missing.length - beforeStats.missing.length,
-  );
+    // ±1 tolerance on ERROR count, no tolerance on MISSING.
+    const newErrorCount = Math.max(
+      0,
+      afterStats.errors.length - beforeStats.errors.length - 1,
+    );
+    const newMissingCount = Math.max(
+      0,
+      afterStats.missing.length - beforeStats.missing.length,
+    );
 
-  if (newErrorCount === 0 && newMissingCount === 0) return null;
+    if (newErrorCount === 0 && newMissingCount === 0) return null;
 
-  const errorLines = dedupeSortLines([
-    ...afterStats.errors,
-    ...afterStats.missing,
-  ]);
-  return { errorLines, newErrorCount, newMissingCount };
+    const errorLines = dedupeSortLines([
+      ...afterStats.errors,
+      ...afterStats.missing,
+    ]);
+    return { errorLines, newErrorCount, newMissingCount };
+  } catch (err) {
+    reportParserError(`wasm:syntax-validate:${lang.id}:${err instanceof Error ? err.message : String(err)}`, err, {
+      context: `tree-sitter syntax validation failed for ${lang.id}`,
+    });
+    return null;
+  } finally {
+    parser.delete();
+  }
 }

@@ -3,7 +3,6 @@ import type { FileMap, MapOptions } from "./types.js";
 import { THRESHOLDS } from "./constants.js";
 import { detectLanguage } from "./language-detect.js";
 import { cMapper, MAPPER_VERSION as C_VERSION } from "./mappers/c.js";
-import { clojureMapper, MAPPER_VERSION as CLOJURE_VERSION } from "./mappers/clojure.js";
 import { cppMapper, MAPPER_VERSION as CPP_VERSION } from "./mappers/cpp.js";
 import { csvMapper, MAPPER_VERSION as CSV_VERSION } from "./mappers/csv.js";
 import { ctagsMapper, MAPPER_VERSION as CTAGS_VERSION } from "./mappers/ctags.js";
@@ -62,8 +61,6 @@ const MAPPERS_V: Record<string, MapperEntry> = {
   yaml: { fn: yamlMapper, version: YAML_VERSION },
   toml: { fn: tomlMapper, version: TOML_VERSION },
   csv: { fn: csvMapper, version: CSV_VERSION },
-  // Phase 5: Clojure tree-sitter
-  clojure: { fn: clojureMapper, version: CLOJURE_VERSION },
   // Phase 6: Swift regex mapper
   swift: { fn: swiftMapper, version: SWIFT_VERSION },
   // Phase 7: Shell/Bash regex mapper

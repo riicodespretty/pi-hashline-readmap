@@ -4,12 +4,14 @@ import { readFile, stat } from "node:fs/promises";
  *
  * Ported from codemap's symbols-rust.ts.
  */
-import { createRequire } from "node:module";
+import type { Node as SyntaxNode, Tree } from "web-tree-sitter";
 
 import type { FileMap, FileSymbol } from "../types.js";
 
 import { DetailLevel, SymbolKind } from "../enums.js";
-export const MAPPER_VERSION = 1;
+import { getWasmParser } from "../parser-loader.js";
+import { reportParserError } from "../parser-errors.js";
+export const MAPPER_VERSION = 2;
 
 type ScopeKind = "mod" | "struct" | "enum" | "trait" | "impl";
 
@@ -33,63 +35,16 @@ interface InternalSymbol {
   docstring?: string;
 }
 
-// Lazy-loaded parser
-let parser: import("tree-sitter") | null = null;
-let parserInitialized = false;
-
-function ensureWritableTypeProperty(parserCtor: unknown): void {
-  const syntaxNode = (parserCtor as { SyntaxNode?: { prototype?: object } })
-    .SyntaxNode;
-  const proto = syntaxNode?.prototype;
-  if (!proto) {
-    return;
-  }
-  const desc = Object.getOwnPropertyDescriptor(proto, "type");
-  if (!desc || desc.set) {
-    return;
-  }
-  Object.defineProperty(proto, "type", { ...desc, set: () => {} });
-}
-
-function getParser(): import("tree-sitter") | null {
-  if (parserInitialized) {
-    return parser;
-  }
-
-  parserInitialized = true;
-
-  // Check if running in Bun (tree-sitter has issues with Bun)
-  const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
-  if (isBun) {
-    return null;
-  }
-
-  try {
-    const require = createRequire(import.meta.url);
-    const ParserCtor = require("tree-sitter") as typeof import("tree-sitter");
-    const Rust = require("tree-sitter-rust") as import("tree-sitter").Language;
-    ensureWritableTypeProperty(ParserCtor);
-    parser = new ParserCtor();
-    parser.setLanguage(Rust);
-    return parser;
-  } catch {
-    return null;
-  }
-}
-
 function normalizeWhitespace(value: string): string {
   return value.replaceAll(/\s+/g, " ").trim();
 }
 
-function getNodeText(
-  node: import("tree-sitter").SyntaxNode,
-  source: string
-): string {
+function getNodeText(node: SyntaxNode, source: string): string {
   return source.slice(node.startIndex, node.endIndex);
 }
 
 function formatSignature(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   source: string,
   opts?: { cutAtParen?: boolean }
 ): string {
@@ -107,7 +62,7 @@ function formatSignature(
   return normalizeWhitespace(text);
 }
 
-function getLineRange(node: import("tree-sitter").SyntaxNode): {
+function getLineRange(node: SyntaxNode): {
   startLine: number;
   endLine: number;
 } {
@@ -118,9 +73,9 @@ function getLineRange(node: import("tree-sitter").SyntaxNode): {
 }
 
 function findFirstDescendant(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   types: string[]
-): import("tree-sitter").SyntaxNode | null {
+): SyntaxNode | null {
   const stack = [...node.namedChildren];
   while (stack.length > 0) {
     const current = stack.pop();
@@ -137,16 +92,14 @@ function findFirstDescendant(
   return null;
 }
 
-function hasVisibilityModifier(
-  node: import("tree-sitter").SyntaxNode
-): boolean {
+function hasVisibilityModifier(node: SyntaxNode): boolean {
   return node.namedChildren.some(
-    (child) => child.type === "visibility_modifier"
+    (child: SyntaxNode | null) => child?.type === "visibility_modifier"
   );
 }
 
 function extractNameFromField(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   field: string,
   source: string
 ): string | null {
@@ -157,10 +110,7 @@ function extractNameFromField(
   return normalizeWhitespace(getNodeText(nameNode, source));
 }
 
-function extractTypeName(
-  node: import("tree-sitter").SyntaxNode,
-  source: string
-): string | null {
+function extractTypeName(node: SyntaxNode, source: string): string | null {
   switch (node.type) {
     case "type_identifier":
     case "identifier":
@@ -259,7 +209,7 @@ function normalizeTypePath(path: string, moduleKey: string | null): string {
  * Returns the first line of the doc comment, or undefined.
  */
 function extractDocComment(
-  node: import("tree-sitter").SyntaxNode,
+  node: SyntaxNode,
   source: string
 ): string | undefined {
   const docLines: string[] = [];
@@ -288,19 +238,7 @@ function extractDocComment(
 /**
  * Extract Rust symbols using tree-sitter.
  */
-function extractRustSymbols(content: string): InternalSymbol[] {
-  const p = getParser();
-  if (!p) {
-    return [];
-  }
-
-  let tree: import("tree-sitter").Tree;
-  try {
-    tree = p.parse(content);
-  } catch {
-    return [];
-  }
-
+function extractRustSymbols(root: SyntaxNode, content: string): InternalSymbol[] {
   const symbols: InternalSymbol[] = [];
   const scopeStack: Scope[] = [];
 
@@ -318,7 +256,7 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     symbols.push(entry);
   };
 
-  const handleMod = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleMod = (node: SyntaxNode): void => {
     const name = extractNameFromField(node, "name", content);
     if (!name) {
       return;
@@ -348,12 +286,12 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     }
     scopeStack.push({ kind: "mod", name, key });
     for (const child of body.namedChildren) {
-      visit(child);
+      if (child) visit(child);
     }
     scopeStack.pop();
   };
 
-  const handleStruct = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleStruct = (node: SyntaxNode): void => {
     const name = extractNameFromField(node, "name", content);
     if (!name) {
       return;
@@ -383,12 +321,12 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     }
     scopeStack.push({ kind: "struct", name, key });
     for (const child of body.namedChildren) {
-      visit(child);
+      if (child) visit(child);
     }
     scopeStack.pop();
   };
 
-  const handleEnum = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleEnum = (node: SyntaxNode): void => {
     const name = extractNameFromField(node, "name", content);
     if (!name) {
       return;
@@ -418,12 +356,12 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     }
     scopeStack.push({ kind: "enum", name, key });
     for (const child of body.namedChildren) {
-      visit(child);
+      if (child) visit(child);
     }
     scopeStack.pop();
   };
 
-  const handleTrait = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleTrait = (node: SyntaxNode): void => {
     const name = extractNameFromField(node, "name", content);
     if (!name) {
       return;
@@ -453,12 +391,12 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     }
     scopeStack.push({ kind: "trait", name, key });
     for (const child of body.namedChildren) {
-      visit(child);
+      if (child) visit(child);
     }
     scopeStack.pop();
   };
 
-  const handleImpl = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleImpl = (node: SyntaxNode): void => {
     const typeNode = node.childForFieldName("type");
     if (!typeNode) {
       return;
@@ -481,12 +419,12 @@ function extractRustSymbols(content: string): InternalSymbol[] {
       implTarget,
     });
     for (const child of body.namedChildren) {
-      visit(child);
+      if (child) visit(child);
     }
     scopeStack.pop();
   };
 
-  const handleFunction = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleFunction = (node: SyntaxNode): void => {
     const name = extractNameFromField(node, "name", content);
     if (!name) {
       return;
@@ -515,7 +453,7 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     });
   };
 
-  const handleConst = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleConst = (node: SyntaxNode): void => {
     const name = extractNameFromField(node, "name", content);
     if (!name) {
       return;
@@ -542,7 +480,7 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     });
   };
 
-  const handleStatic = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleStatic = (node: SyntaxNode): void => {
     const name = extractNameFromField(node, "name", content);
     if (!name) {
       return;
@@ -566,7 +504,7 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     });
   };
 
-  const handleType = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleType = (node: SyntaxNode): void => {
     const name = extractNameFromField(node, "name", content);
     if (!name) {
       return;
@@ -593,7 +531,7 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     });
   };
 
-  const handleMacro = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleMacro = (node: SyntaxNode): void => {
     const name = extractNameFromField(node, "name", content);
     if (!name) {
       return;
@@ -616,7 +554,7 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     });
   };
 
-  const handleField = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleField = (node: SyntaxNode): void => {
     const structScope = currentScope("struct");
     if (!structScope) {
       return;
@@ -641,7 +579,7 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     });
   };
 
-  const handleEnumVariant = (node: import("tree-sitter").SyntaxNode): void => {
+  const handleEnumVariant = (node: SyntaxNode): void => {
     const enumScope = currentScope("enum");
     if (!enumScope) {
       return;
@@ -667,7 +605,7 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     });
   };
 
-  const visit = (node: import("tree-sitter").SyntaxNode): void => {
+  const visit = (node: SyntaxNode): void => {
     switch (node.type) {
       case "use_declaration": {
         return;
@@ -727,11 +665,11 @@ function extractRustSymbols(content: string): InternalSymbol[] {
     }
 
     for (const child of node.namedChildren) {
-      visit(child);
+      if (child) visit(child);
     }
   };
 
-  visit(tree.rootNode);
+  visit(root);
 
   return symbols;
 }
@@ -739,22 +677,10 @@ function extractRustSymbols(content: string): InternalSymbol[] {
 /**
  * Extract use statements for imports list.
  */
-function extractUseStatements(content: string): string[] {
-  const p = getParser();
-  if (!p) {
-    return [];
-  }
-
-  let tree: import("tree-sitter").Tree;
-  try {
-    tree = p.parse(content);
-  } catch {
-    return [];
-  }
-
+function extractUseStatements(root: SyntaxNode, content: string): string[] {
   const imports: string[] = [];
 
-  const visit = (node: import("tree-sitter").SyntaxNode): void => {
+  const visit = (node: SyntaxNode): void => {
     if (node.type === "use_declaration") {
       const arg = node.childForFieldName("argument");
       if (arg) {
@@ -763,11 +689,11 @@ function extractUseStatements(content: string): string[] {
       }
     }
     for (const child of node.namedChildren) {
-      visit(child);
+      if (child) visit(child);
     }
   };
 
-  visit(tree.rootNode);
+  visit(root);
   return imports;
 }
 
@@ -884,15 +810,18 @@ export async function rustMapperFromContent(
   content: string,
   signal?: AbortSignal
 ): Promise<FileMap | null> {
+  const parser = await getWasmParser("rust");
+  if (!parser) return null;
+  let tree: Tree | null = null;
   try {
-    if (!getParser()) return null;
     if (signal?.aborted) return null;
-
-    const internalSymbols = extractRustSymbols(content);
+    tree = parser.parse(content);
+    if (!tree) return null;
+    const internalSymbols = extractRustSymbols(tree.rootNode, content);
     if (internalSymbols.length === 0) return null;
 
     const symbols = convertSymbols(internalSymbols);
-    const imports = extractUseStatements(content);
+    const imports = extractUseStatements(tree.rootNode, content);
     const totalLines = content.split("\n").length;
     const totalBytes = Buffer.byteLength(content, "utf8");
 
@@ -905,12 +834,17 @@ export async function rustMapperFromContent(
       imports,
       detailLevel: DetailLevel.Full,
     };
-  } catch (error) {
-    if (signal?.aborted) return null;
-    console.error(`Rust content mapper failed: ${error}`);
+  } catch (err) {
+    reportParserError(`wasm:parse:rust:${err instanceof Error ? err.message : String(err)}`, err, {
+      context: "Rust tree-sitter parse failed",
+    });
     return null;
+  } finally {
+    tree?.delete();
+    parser.delete();
   }
 }
+
 /**
  * Generate a file map for Rust files using tree-sitter.
  */
@@ -918,12 +852,10 @@ export async function rustMapper(
   filePath: string,
   signal?: AbortSignal
 ): Promise<FileMap | null> {
+  const parser = await getWasmParser("rust");
+  if (!parser) return null;
+  let tree: Tree | null = null;
   try {
-    // Check if parser is available
-    if (!getParser()) {
-      return null;
-    }
-
     const stats = await stat(filePath);
     const totalBytes = stats.size;
 
@@ -935,19 +867,15 @@ export async function rustMapper(
       return null;
     }
 
-    // Extract symbols
-    const internalSymbols = extractRustSymbols(content);
-
+    tree = parser.parse(content);
+    if (!tree) return null;
+    const internalSymbols = extractRustSymbols(tree.rootNode, content);
     if (internalSymbols.length === 0) {
       return null;
     }
 
-    // Convert to FileSymbols
     const symbols = convertSymbols(internalSymbols);
-
-    // Extract imports
-    const imports = extractUseStatements(content);
-
+    const imports = extractUseStatements(tree.rootNode, content);
     const totalLines = content.split("\n").length;
 
     return {
@@ -959,11 +887,13 @@ export async function rustMapper(
       imports,
       detailLevel: DetailLevel.Full,
     };
-  } catch (error) {
-    if (signal?.aborted) {
-      return null;
-    }
-    console.error(`Rust mapper failed: ${error}`);
+  } catch (err) {
+    reportParserError(`wasm:parse:rust:${err instanceof Error ? err.message : String(err)}`, err, {
+      context: "Rust tree-sitter parse failed",
+    });
     return null;
+  } finally {
+    tree?.delete();
+    parser.delete();
   }
 }
