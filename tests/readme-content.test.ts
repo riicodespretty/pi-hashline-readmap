@@ -48,5 +48,7 @@ describe("README.md content (AC-1, AC-2)", () => {
     expect(readme).not.toContain("tree-sitter-cpp and tree-sitter-java");
     expect(readme).not.toContain("widen their peer ranges upstream");
     expect(readme).not.toContain("Clojure");
+    expect(readme).toContain("Rust, C++, and Java structural maps use `web-tree-sitter` with packaged `tree-sitter-wasms` grammars");
+    expect(readme).toContain("no native tree-sitter packages are installed for those mappers");
   });
 });

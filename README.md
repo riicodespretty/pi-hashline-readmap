@@ -71,7 +71,7 @@ brew install difftastic        # optional, improves semantic edit summaries
 brew install shellcheck yq scc # optional, improves some bash-output compression paths
 ```
 
-Dedicated readmap mappers handle TypeScript, Python, Rust, Go, Java, C, C++, Swift, shell, SQL, Markdown, and several data formats (JSON/JSONL/YAML/TOML/CSV) with the highest-quality structural maps. Rust, C++, and Java structural maps use packaged WASM grammars. For files outside that set, the read tool's structural map falls back to universal-ctags when it is installed, and to a generic regex-based extractor when it is not. Installing universal-ctags is therefore only worthwhile if you regularly read files in languages without a dedicated mapper (for example Ruby, PHP, Lua, Kotlin) and want symbol-aware maps for them.
+Dedicated readmap mappers handle TypeScript, Python, Rust, Go, Java, C, C++, Swift, shell, SQL, Markdown, and several data formats (JSON/JSONL/YAML/TOML/CSV) with the highest-quality structural maps. Rust, C++, and Java structural maps use `web-tree-sitter` with packaged `tree-sitter-wasms` grammars; no native tree-sitter packages are installed for those mappers. For files outside that set, the read tool's structural map falls back to universal-ctags when it is installed, and to a generic regex-based extractor when it is not. Installing universal-ctags is therefore only worthwhile if you regularly read files in languages without a dedicated mapper (for example Ruby, PHP, Lua, Kotlin) and want symbol-aware maps for them.
 
 ### Bash output contract
 
