@@ -326,6 +326,7 @@ Combines and adapts ideas from:
 
 - [pi-hashline-edit](https://github.com/nicholasgasior/pi-hashline-edit) — hash-anchored editing
 - [pi-read-map](https://github.com/nicholasgasior/pi-read-map) — structural file maps
+- [pi-repo-map](https://github.com/PurpleMyst/pi-repo-map) — inspiration for repository mapping and tree-sitter-based structure extraction
 - [pi-rtk](https://github.com/mcowger/pi-rtk) — bash output compression
 
 ## License
