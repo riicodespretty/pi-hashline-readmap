@@ -14,7 +14,6 @@ const modules = [
   "../src/readmap/mappers/yaml.js",
   "../src/readmap/mappers/toml.js",
   "../src/readmap/mappers/csv.js",
-  "../src/readmap/mappers/clojure.js",
   "../src/readmap/mappers/swift.js",
   "../src/readmap/mappers/shell.js",
   "../src/readmap/mappers/fallback.js",

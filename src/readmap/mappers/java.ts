@@ -1,12 +1,13 @@
 import { readFile, stat } from "node:fs/promises";
-import { createRequire } from "node:module";
+
+import type { Node as SyntaxNode, Tree } from "web-tree-sitter";
 
 import type { FileMap, FileSymbol } from "../types.js";
 import { DetailLevel, SymbolKind } from "../enums.js";
+import { getWasmParser } from "../parser-loader.js";
+import { reportParserError } from "../parser-errors.js";
 
-export const MAPPER_VERSION = 2;
-
-type SyntaxNode = import("tree-sitter").SyntaxNode;
+export const MAPPER_VERSION = 3;
 
 const TYPE_KINDS: Record<string, SymbolKind> = {
   class_declaration: SymbolKind.Class,
@@ -26,44 +27,12 @@ const SKIP_TYPES = new Set([
   "local_variable_declaration",
 ]);
 
-
 const MEMBER_METHOD_TYPES = new Set([
   "method_declaration",
   "constructor_declaration",
   "compact_constructor_declaration",
   "annotation_type_element_declaration",
 ]);
-
-let parser: import("tree-sitter") | null = null;
-let parserInitialized = false;
-
-function ensureWritableTypeProperty(parserCtor: unknown): void {
-  const syntaxNode = (parserCtor as { SyntaxNode?: { prototype?: object } }).SyntaxNode;
-  const proto = syntaxNode?.prototype;
-  if (!proto) return;
-  const desc = Object.getOwnPropertyDescriptor(proto, "type");
-  if (!desc || desc.set) return;
-  Object.defineProperty(proto, "type", { ...desc, set: () => {} });
-}
-
-function getParser(): import("tree-sitter") | null {
-  if (parserInitialized) return parser;
-  parserInitialized = true;
-  if (typeof (globalThis as { Bun?: unknown }).Bun !== "undefined") return null;
-
-  try {
-    const require = createRequire(import.meta.url);
-    const ParserCtor = require("tree-sitter") as typeof import("tree-sitter");
-    const JavaModule = require("tree-sitter-java") as import("tree-sitter").Language | { default: import("tree-sitter").Language };
-    const Java = "default" in JavaModule ? JavaModule.default : JavaModule;
-    ensureWritableTypeProperty(ParserCtor);
-    parser = new ParserCtor();
-    parser.setLanguage(Java);
-    return parser;
-  } catch {
-    return null;
-  }
-}
 
 function normalizeWhitespace(value: string): string {
   return value.replaceAll(/\s+/g, " ").trim();
@@ -93,7 +62,7 @@ function formatSignature(node: SyntaxNode, source: string, options?: { stripLead
 }
 
 function extractModifiers(node: SyntaxNode, source: string): string[] {
-  const modifiers = node.namedChildren.find((child) => child.type === "modifiers");
+  const modifiers = node.namedChildren.find((child) => child?.type === "modifiers");
   if (!modifiers) return [];
   const text = getNodeText(modifiers, source);
   return ["public", "protected", "private", "static", "final", "abstract", "native", "synchronized", "transient", "volatile", "strictfp", "default"]
@@ -107,7 +76,9 @@ function extractImports(root: SyntaxNode, source: string): string[] {
       imports.push(normalizeWhitespace(getNodeText(node, source)));
       return;
     }
-    for (const child of node.namedChildren) visit(child);
+    for (const child of node.namedChildren) {
+      if (child) visit(child);
+    }
   };
   visit(root);
   return imports;
@@ -135,7 +106,7 @@ function buildSymbol(
 }
 
 function variableDeclarators(node: SyntaxNode): SyntaxNode[] {
-  return node.namedChildren.filter((child) => child.type === "variable_declarator");
+  return node.namedChildren.filter((child): child is SyntaxNode => !!child && child.type === "variable_declarator");
 }
 
 function handleVariableDeclaration(node: SyntaxNode, source: string, parent: FileSymbol | undefined, rootSymbols: FileSymbol[]): void {
@@ -163,7 +134,9 @@ function extractSymbols(root: SyntaxNode, source: string): FileSymbol[] {
       const symbol = buildSymbol(node, source, name, typeKind, { stripLeadingAnnotations: Boolean(parent) });
       (parent ? (parent.children ??= []) : rootSymbols).push(symbol);
       const body = node.childForFieldName("body");
-      for (const child of body?.namedChildren ?? []) visit(child, symbol);
+      for (const child of body?.namedChildren ?? []) {
+        if (child) visit(child, symbol);
+      }
       return;
     }
 
@@ -179,7 +152,6 @@ function extractSymbols(root: SyntaxNode, source: string): FileSymbol[] {
       return;
     }
 
-
     if (node.type === "field_declaration" || node.type === "constant_declaration") {
       handleVariableDeclaration(node, source, parent, rootSymbols);
       return;
@@ -191,69 +163,86 @@ function extractSymbols(root: SyntaxNode, source: string): FileSymbol[] {
       const symbol = buildSymbol(node, source, name, SymbolKind.Constant);
       (parent ? (parent.children ??= []) : rootSymbols).push(symbol);
       const body = node.childForFieldName("body");
-      for (const child of body?.namedChildren ?? []) visit(child, symbol);
+      for (const child of body?.namedChildren ?? []) {
+        if (child) visit(child, symbol);
+      }
       return;
     }
 
     if (SKIP_TYPES.has(node.type)) return;
-    for (const child of node.namedChildren) visit(child, parent);
+    for (const child of node.namedChildren) {
+      if (child) visit(child, parent);
+    }
   };
 
   visit(root);
   return rootSymbols;
 }
 
-
 export async function javaMapperFromContent(
   filePath: string,
   content: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<FileMap | null> {
+  const parser = await getWasmParser("java");
+  if (!parser) return null;
+  let tree: Tree | null = null;
   try {
-    const p = getParser();
-    if (!p) return null;
     if (signal?.aborted) return null;
-    const tree = p.parse(content);
+    tree = parser.parse(content);
+    if (!tree) return null;
     const symbols = extractSymbols(tree.rootNode, content);
     if (symbols.length === 0) return null;
+    const imports = extractImports(tree.rootNode, content);
     return {
       path: filePath,
       totalLines: content.split("\n").length,
       totalBytes: Buffer.byteLength(content, "utf8"),
       language: "Java",
       symbols,
-      imports: extractImports(tree.rootNode, content),
+      imports,
       detailLevel: DetailLevel.Full,
     };
-  } catch (error) {
-    if (signal?.aborted) return null;
-    console.error(`Java content mapper failed: ${error}`);
+  } catch (err) {
+    reportParserError(`wasm:parse:java:${err instanceof Error ? err.message : String(err)}`, err, {
+      context: "Java tree-sitter parse failed",
+    });
     return null;
+  } finally {
+    tree?.delete();
+    parser.delete();
   }
 }
 
 export async function javaMapper(filePath: string, signal?: AbortSignal): Promise<FileMap | null> {
+  const parser = await getWasmParser("java");
+  if (!parser) return null;
+  let tree: Tree | null = null;
   try {
-    const p = getParser();
-    if (!p) return null;
     const stats = await stat(filePath);
     const content = await readFile(filePath, "utf8");
     if (signal?.aborted) return null;
-    const tree = p.parse(content);
+    tree = parser.parse(content);
+    if (!tree) return null;
     const symbols = extractSymbols(tree.rootNode, content);
     if (symbols.length === 0) return null;
+    const imports = extractImports(tree.rootNode, content);
     return {
       path: filePath,
       totalLines: content.split("\n").length,
       totalBytes: stats.size,
       language: "Java",
       symbols,
-      imports: extractImports(tree.rootNode, content),
+      imports,
       detailLevel: DetailLevel.Full,
     };
-  } catch (error) {
-    if (signal?.aborted) return null;
-    console.error(`Java mapper failed: ${error}`);
+  } catch (err) {
+    reportParserError(`wasm:parse:java:${err instanceof Error ? err.message : String(err)}`, err, {
+      context: "Java tree-sitter parse failed",
+    });
     return null;
+  } finally {
+    tree?.delete();
+    parser.delete();
   }
 }
