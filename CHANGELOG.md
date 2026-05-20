@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- Release 0.8.13: Rust, C++, Java, and edit syntax validation now use `web-tree-sitter` with packaged `tree-sitter-wasms` grammars instead of native `tree-sitter*` packages. Native grammar dependencies were removed and unsupported Clojure mapper support was dropped (#192).
 ### Fixed
 - `ast_search`: when the bundled `@ast-grep/cli` binary cannot be resolved, the PATH fallback now prefers `ast-grep` over `sg`, avoiding the `sg: group 'run' does not exist` error caused by util-linux's setgid `sg` on Linux. Thanks to @Ramblurr for the original investigation in [GH #112](https://github.com/coctostan/pi-hashline-readmap/issues/112) and PR #113.
 - `readmap` mappers (`python`, `go`, `fallback`, `json`, `ctags`) now invoke subprocesses via `execFile` or in-process scanning instead of shell `exec`, so paths containing shell metacharacters (`"`, `` ` ``, `$`, `;`, `|`, `&`, newline) no longer break quoting or produce null maps ([GH #116](https://github.com/coctostan/pi-hashline-readmap/issues/116)). Each migrated mapper now carries a comment forbidding `exec`-with-template to prevent regressions.
