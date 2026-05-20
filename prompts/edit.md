@@ -72,7 +72,7 @@ If `edit` auto-relocates an anchor, check the warning and verify the edit landed
 - A `replace`-only success may include a reminder to prefer anchored edits next time.
 
 Syntax validation runs before writing when supported:
-- Supported: Rust, C++, C headers, Java, Clojure.
+- Supported: Rust, C++, C headers, Java.
 - Default `warn`: write succeeds, but warnings include `syntax-regression: lines X-Y`.
 - `block`: aborts without writing.
 - `off`: skips validation.

@@ -28,7 +28,7 @@ It also reduces extension conflict risk by replacing several overlapping tool pa
 ### Requirements
 
 - [pi](https://github.com/mariozechner/pi-coding-agent) with extension support
-- Node.js **>= 22** for installation/runtime and local development (the bundled `nushell` package declares this engine floor)
+- Node.js **>= 20** for package installation/runtime; use a current Node LTS/current release for local development
 
 ### From npm
 
@@ -71,20 +71,7 @@ brew install difftastic        # optional, improves semantic edit summaries
 brew install shellcheck yq scc # optional, improves some bash-output compression paths
 ```
 
-Dedicated readmap mappers handle TypeScript, Python, Rust, Go, Java, C, C++, Swift, Clojure, shell, SQL, Markdown, and several data formats (JSON/JSONL/YAML/TOML/CSV) with the highest-quality structural maps. For files outside that set, the read tool's structural map falls back to universal-ctags when it is installed, and to a generic regex-based extractor when it is not. Installing universal-ctags is therefore only worthwhile if you regularly read files in languages without a dedicated mapper (for example Ruby, PHP, Lua, Kotlin) and want symbol-aware maps for them.
-
-### Known npm install warnings
-
-Installing `pi-hashline-readmap` prints a few `npm warn ERESOLVE` lines about `tree-sitter` peer dependencies, plus a `node-domexception@1.0.0` deprecation notice. These are cosmetic and do not break the install.
-
-Why they happen:
-
-- `tree-sitter-cpp` and `tree-sitter-java` (latest published versions) declare `peerOptional tree-sitter@"^0.21.1"`.
-- We pin `tree-sitter@0.22.4` because `tree-sitter-rust@0.23.3` requires `^0.22.1`, so we cannot go back to 0.21.x.
-- The `overrides` block in our `package.json` resolves this when this repo is the root project, but `overrides` are not honored when we are installed as a dependency, which is what `pi install` does. The grammars work fine against `tree-sitter@0.22.x` at runtime — the peer dep is `peerOptional`, npm just prints the mismatch.
-- `node-domexception` is a transitive deprecation, not one of our direct dependencies.
-
-These warnings will go away once `tree-sitter-cpp` / `tree-sitter-java` widen their peer ranges upstream; the `overrides` block can then be removed too.
+Dedicated readmap mappers handle TypeScript, Python, Rust, Go, Java, C, C++, Swift, shell, SQL, Markdown, and several data formats (JSON/JSONL/YAML/TOML/CSV) with the highest-quality structural maps. Rust, C++, and Java structural maps use packaged WASM grammars. For files outside that set, the read tool's structural map falls back to universal-ctags when it is installed, and to a generic regex-based extractor when it is not. Installing universal-ctags is therefore only worthwhile if you regularly read files in languages without a dedicated mapper (for example Ruby, PHP, Lua, Kotlin) and want symbol-aware maps for them.
 
 ### Bash output contract
 
@@ -155,7 +142,7 @@ read({ path: "tests/fixtures/small.ts", symbol: "createDemoDirectory" })
 read({ path: "tests/fixtures/small.ts", symbol: "UserDirectory.addUser" })
 ```
 
-Structural maps are appended automatically when large reads are truncated. The readmap supports 18 mapped language/file kinds, including TypeScript, JavaScript, Python, Rust, Go, Java, Swift, Shell, C/C++, Clojure, SQL, JSON/JSONL, Markdown, YAML, TOML, and CSV/TSV. Direct symbol reads can target functions, classes, methods, interfaces, type aliases, constants, and enums when the file type is supported.
+Structural maps are appended automatically when large reads are truncated. The readmap supports 18 mapped language/file kinds, including TypeScript, JavaScript, Python, Rust, Go, Java, Swift, Shell, C/C++, SQL, JSON/JSONL, Markdown, YAML, TOML, and CSV/TSV. Direct symbol reads can target functions, classes, methods, interfaces, type aliases, constants, and enums when the file type is supported.
 
 ### Read a symbol with local support
 

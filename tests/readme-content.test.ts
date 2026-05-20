@@ -42,4 +42,11 @@ describe("README.md content (AC-1, AC-2)", () => {
     expect(readme).toContain("https://github.com/coctostan/pi-hashline-readmap/blob/main/AGENTS.md");
     expect(readme).toContain("https://github.com/coctostan/pi-hashline-readmap/blob/main/docs/exploratory-functional-testing.md");
   });
+
+  it("does not document obsolete native tree-sitter install caveats or Clojure support", () => {
+    expect(readme).not.toContain("tree-sitter peer dependencies");
+    expect(readme).not.toContain("tree-sitter-cpp and tree-sitter-java");
+    expect(readme).not.toContain("widen their peer ranges upstream");
+    expect(readme).not.toContain("Clojure");
+  });
 });

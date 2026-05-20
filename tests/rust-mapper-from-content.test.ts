@@ -5,13 +5,10 @@ describe("rustMapperFromContent", () => {
   it("returns a FileMap from in-memory Rust content, or null when parser unavailable", async () => {
     const content = "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n";
     const result = await rustMapperFromContent("virtual.rs", content);
-    // Result is null only when tree-sitter-rust is unavailable (Bun env or missing dep).
-    // In Node.js with the project's dependencies, the parser is available.
-    if (result !== null) {
-      expect(result.symbols.some((s: any) => s.name === "add")).toBe(true);
-      expect(result.path).toBe("virtual.rs");
-      expect(result.language).toBe("Rust");
-    }
+    expect(result).not.toBeNull();
+    expect(result!.symbols.some((s: any) => s.name === "add")).toBe(true);
+    expect(result!.path).toBe("virtual.rs");
+    expect(result!.language).toBe("Rust");
   });
 
   it("returns null for empty content (no symbols extracted)", async () => {
