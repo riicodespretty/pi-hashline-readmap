@@ -7,6 +7,7 @@ import { resolveCacheDir, computeKey, contentHashFor64k, readCached, writeCached
 import * as persistentMapCacheModule from "../src/persistent-map-cache.js";
 import * as mapperModule from "../src/readmap/mapper.js";
 import { clearMapCache, getOrGenerateMap } from "../src/map-cache.js";
+import { __resetHashlineSettingsPathsForTest, __setHashlineSettingsPathsForTest } from "../src/hashline-settings.js";
 
 const SAVED = {
   dir: process.env.PI_HASHLINE_MAP_CACHE_DIR,
@@ -26,12 +27,17 @@ describe("resolveCacheDir", () => {
   beforeEach(() => {
     delete process.env.PI_HASHLINE_MAP_CACHE_DIR;
     delete process.env.XDG_CACHE_HOME;
+    __setHashlineSettingsPathsForTest({
+      globalSettingsPath: join(tmpdir(), `missing-global-${randomBytes(6).toString("hex")}.json`),
+      projectSettingsPath: join(tmpdir(), `missing-project-${randomBytes(6).toString("hex")}.json`),
+    });
   });
 
   afterEach(() => {
     restoreEnv("PI_HASHLINE_MAP_CACHE_DIR", SAVED.dir);
     restoreEnv("XDG_CACHE_HOME", SAVED.xdg);
     restoreEnv("PI_HASHLINE_NO_PERSIST_MAPS", SAVED.noPersist);
+    __resetHashlineSettingsPathsForTest();
   });
 
   it("uses PI_HASHLINE_MAP_CACHE_DIR when set", () => {
@@ -47,6 +53,126 @@ describe("resolveCacheDir", () => {
 
   it("falls back to ~/.cache when neither env var set", () => {
     expect(resolveCacheDir()).toBe(join(homedir(), ".cache/pi-hashline-readmap/maps"));
+  });
+});
+
+
+describe("resolveCacheDir JSON settings", () => {
+  it("uses JSON mapCache.dir when env cache dir is unset", async () => {
+    delete process.env.PI_HASHLINE_MAP_CACHE_DIR;
+    delete process.env.XDG_CACHE_HOME;
+    const root = join(tmpdir(), `pmc-json-dir-${randomBytes(6).toString("hex")}`);
+    const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+    await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+    await writeFile(projectSettingsPath, JSON.stringify({ mapCache: { dir: "/tmp/json-map-cache" } }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+    try {
+      expect(resolveCacheDir()).toBe("/tmp/json-map-cache");
+    } finally {
+      __resetHashlineSettingsPathsForTest();
+      await rm(root, { recursive: true, force: true });
+      restoreEnv("PI_HASHLINE_MAP_CACHE_DIR", SAVED.dir);
+      restoreEnv("XDG_CACHE_HOME", SAVED.xdg);
+    }
+  });
+
+
+  it("lets PI_HASHLINE_MAP_CACHE_DIR override JSON mapCache.dir", async () => {
+    const root = join(tmpdir(), `pmc-env-dir-${randomBytes(6).toString("hex")}`);
+    const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+    await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+    await writeFile(projectSettingsPath, JSON.stringify({ mapCache: { dir: "/tmp/json-map-cache" } }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+    process.env.PI_HASHLINE_MAP_CACHE_DIR = "/tmp/env-map-cache";
+    try {
+      expect(resolveCacheDir()).toBe("/tmp/env-map-cache");
+    } finally {
+      __resetHashlineSettingsPathsForTest();
+      await rm(root, { recursive: true, force: true });
+      restoreEnv("PI_HASHLINE_MAP_CACHE_DIR", SAVED.dir);
+    }
+  });
+
+
+  it("keeps XDG_CACHE_HOME and home fallbacks when explicit config is unset", () => {
+    delete process.env.PI_HASHLINE_MAP_CACHE_DIR;
+    process.env.XDG_CACHE_HOME = "/tmp/xdg-cache";
+    __setHashlineSettingsPathsForTest({
+      globalSettingsPath: join(tmpdir(), `missing-global-${randomBytes(6).toString("hex")}.json`),
+      projectSettingsPath: join(tmpdir(), `missing-project-${randomBytes(6).toString("hex")}.json`),
+    });
+    try {
+      expect(resolveCacheDir()).toBe("/tmp/xdg-cache/pi-hashline-readmap/maps");
+      delete process.env.XDG_CACHE_HOME;
+      expect(resolveCacheDir()).toBe(join(homedir(), ".cache/pi-hashline-readmap/maps"));
+    } finally {
+      __resetHashlineSettingsPathsForTest();
+      restoreEnv("PI_HASHLINE_MAP_CACHE_DIR", SAVED.dir);
+      restoreEnv("XDG_CACHE_HOME", SAVED.xdg);
+    }
+  });
+
+  it("disables persistence when JSON mapCache.enabled is false", async () => {
+    delete process.env.PI_HASHLINE_NO_PERSIST_MAPS;
+    const root = join(tmpdir(), `pmc-json-disabled-${randomBytes(6).toString("hex")}`);
+    const dir = join(root, "cache");
+    const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+    await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+    await writeFile(projectSettingsPath, JSON.stringify({ mapCache: { dir, enabled: false } }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+    const map = { path: "/x", totalLines: 1, totalBytes: 1, language: "typescript", symbols: [], imports: [], detailLevel: "outline" } as any;
+    try {
+      await writeCachedRaw("json-disabled", map);
+      expect(await readCached("json-disabled")).toBeNull();
+    } finally {
+      __resetHashlineSettingsPathsForTest();
+      await rm(root, { recursive: true, force: true });
+      restoreEnv("PI_HASHLINE_NO_PERSIST_MAPS", SAVED.noPersist);
+    }
+  });
+
+  it("bypasses persistent lookup/write in getOrGenerateMap when JSON mapCache.enabled is false", async () => {
+    delete process.env.PI_HASHLINE_NO_PERSIST_MAPS;
+    const root = join(tmpdir(), `pmc-json-disabled-map-${randomBytes(6).toString("hex")}`);
+    const srcPath = join(root, "src.ts");
+    const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+    await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+    await writeFile(srcPath, "export const x = 1;\n");
+    await writeFile(projectSettingsPath, JSON.stringify({ mapCache: { enabled: false } }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+    clearMapCache();
+    const readSpy = vi.spyOn(persistentMapCacheModule, "readCached");
+    const writeSpy = vi.spyOn(persistentMapCacheModule, "writeCached");
+    try {
+      expect(await getOrGenerateMap(srcPath)).not.toBeNull();
+      expect(readSpy).not.toHaveBeenCalled();
+      expect(writeSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+      clearMapCache();
+      __resetHashlineSettingsPathsForTest();
+      await rm(root, { recursive: true, force: true });
+      restoreEnv("PI_HASHLINE_NO_PERSIST_MAPS", SAVED.noPersist);
+    }
+  });
+
+  it("lets PI_HASHLINE_NO_PERSIST_MAPS disable persistence over JSON", async () => {
+    const root = join(tmpdir(), `pmc-env-disabled-${randomBytes(6).toString("hex")}`);
+    const dir = join(root, "cache");
+    const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+    await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+    await writeFile(projectSettingsPath, JSON.stringify({ mapCache: { dir, enabled: true } }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+    process.env.PI_HASHLINE_NO_PERSIST_MAPS = "1";
+    const map = { path: "/x", totalLines: 1, totalBytes: 1, language: "typescript", symbols: [], imports: [], detailLevel: "outline" } as any;
+    try {
+      await writeCachedRaw("env-disabled", map);
+      expect(await readCached("env-disabled")).toBeNull();
+    } finally {
+      __resetHashlineSettingsPathsForTest();
+      await rm(root, { recursive: true, force: true });
+      restoreEnv("PI_HASHLINE_NO_PERSIST_MAPS", SAVED.noPersist);
+    }
   });
 });
 
@@ -280,14 +406,41 @@ describe("writeCached eviction", () => {
       detailLevel: "outline",
     }) as any;
 
-    await writeCached("a", m(1));
-    await utimes(join(dir, "a.json"), new Date(Date.now() - 3000), new Date(Date.now() - 3000));
-    await writeCached("b", m(2));
-    await utimes(join(dir, "b.json"), new Date(Date.now() - 2000), new Date(Date.now() - 2000));
-    await writeCached("c", m(3));
+    const oldKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const midKey = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const newKey = "cccccccccccccccccccccccccccccccc";
+
+    await writeCached(oldKey, m(1));
+    await utimes(join(dir, `${oldKey}.json`), new Date(Date.now() - 3000), new Date(Date.now() - 3000));
+    await writeCached(midKey, m(2));
+    await utimes(join(dir, `${midKey}.json`), new Date(Date.now() - 2000), new Date(Date.now() - 2000));
+    await writeCached(newKey, m(3));
 
     const entries = (await readdir(dir)).filter((e) => e.endsWith(".json")).sort();
-    expect(entries).toEqual(["b.json", "c.json"]);
+    expect(entries).toEqual([`${midKey}.json`, `${newKey}.json`]);
+  });
+
+
+  it("does not evict unrelated JSON files in the configured cache directory", async () => {
+    __setEvictionHooksForTest({ interval: 2, cap: 1 });
+    const map = {
+      path: "/x",
+      totalLines: 1,
+      totalBytes: 1,
+      language: "t",
+      symbols: [],
+      imports: [],
+      detailLevel: "outline",
+    } as any;
+    const oldKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const newKey = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    await writeFile(join(dir, "settings.json"), "{}", "utf8");
+    await writeCached(oldKey, map);
+    await utimes(join(dir, `${oldKey}.json`), new Date(Date.now() - 3000), new Date(Date.now() - 3000));
+    await writeCached(newKey, map);
+
+    const entries = (await readdir(dir)).filter((e) => e.endsWith(".json")).sort();
+    expect(entries).toEqual([`${newKey}.json`, "settings.json"]);
   });
 });
 

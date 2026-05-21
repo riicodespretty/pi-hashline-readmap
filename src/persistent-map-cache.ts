@@ -4,16 +4,21 @@ import { createHash, randomBytes } from "node:crypto";
 import { open, readFile, writeFile as fsWriteFile, mkdir as fsMkdir, rename, readdir, stat, unlink } from "node:fs/promises";
 import xxhashWasm from "xxhash-wasm";
 import type { FileMap } from "./readmap/types.js";
+import { resolveHashlineJsonSettings } from "./hashline-settings.js";
 
 /**
- * Resolve the on-disk map-cache directory using env precedence:
+ * Resolve the on-disk map-cache directory using config precedence:
  * 1. `PI_HASHLINE_MAP_CACHE_DIR` (when non-empty) — used verbatim.
- * 2. `$XDG_CACHE_HOME/pi-hashline-readmap/maps` (when non-empty).
- * 3. `~/.cache/pi-hashline-readmap/maps`.
+ * 2. JSON `mapCache.dir` (when configured).
+ * 3. `$XDG_CACHE_HOME/pi-hashline-readmap/maps` (when non-empty).
+ * 4. `~/.cache/pi-hashline-readmap/maps`.
  */
 export function resolveCacheDir(): string {
   const explicit = process.env.PI_HASHLINE_MAP_CACHE_DIR;
   if (explicit && explicit.length > 0) return explicit;
+
+  const configured = resolveHashlineJsonSettings().settings.mapCache?.dir;
+  if (configured && configured.length > 0) return configured;
 
   const xdg = process.env.XDG_CACHE_HOME;
   if (xdg && xdg.length > 0) return join(xdg, "pi-hashline-readmap/maps");
@@ -21,8 +26,11 @@ export function resolveCacheDir(): string {
   return join(homedir(), ".cache/pi-hashline-readmap/maps");
 }
 
-function persistenceEnabled(): boolean {
-  return process.env.PI_HASHLINE_NO_PERSIST_MAPS !== "1";
+export function persistenceEnabled(): boolean {
+  if (process.env.PI_HASHLINE_NO_PERSIST_MAPS === "1") return false;
+  const configured = resolveHashlineJsonSettings().settings.mapCache?.enabled;
+  if (configured !== undefined) return configured;
+  return true;
 }
 
 /**
@@ -189,10 +197,11 @@ export function __setEvictionHooksForTest(
   if (typeof hooks.cap === "number") evictionCap = hooks.cap;
 }
 
+const CACHE_KEY_FILE = /^[0-9a-f]{32}\.json$/;
 async function maybeEvict(): Promise<void> {
   try {
     const dir = resolveCacheDir();
-    const names = (await readdir(dir)).filter((n) => n.endsWith(".json"));
+    const names = (await readdir(dir)).filter((n) => CACHE_KEY_FILE.test(n));
     if (names.length <= evictionCap) return;
 
     const entries: Array<{ path: string; age: number }> = [];

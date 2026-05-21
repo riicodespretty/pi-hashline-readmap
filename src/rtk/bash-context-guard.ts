@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parsePositiveBase10Int } from "../grep-budget.js";
+import { resolveHashlineJsonSettings } from "../hashline-settings.js";
 import type { BashOriginalOutputMetadata } from "./bash-original-output.js";
 
 export const BASH_CONTEXT_GUARD_DEFAULT_MAX_LINES = 2000;
@@ -68,10 +69,18 @@ function mergeFs(overrides: Partial<BashContextGuardFs> | undefined): BashContex
   return { ...defaultFs(), ...(overrides ?? {}) };
 }
 
-function resolveDimension(rawEnvValue: string | undefined, ceiling: number): number {
+function resolveEnvDimension(rawEnvValue: string | undefined, ceiling: number): number | undefined {
   const parsed = parsePositiveBase10Int(rawEnvValue);
-  if (parsed === undefined) return ceiling;
-  return Math.min(parsed, ceiling);
+  return parsed === undefined ? undefined : Math.min(parsed, ceiling);
+}
+
+function resolveDimension(rawEnvValue: string | undefined, jsonValue: number | undefined, ceiling: number): number {
+  if (rawEnvValue !== undefined) {
+    const envValue = resolveEnvDimension(rawEnvValue, ceiling);
+    if (envValue !== undefined) return envValue;
+  }
+  if (jsonValue !== undefined) return Math.min(jsonValue, ceiling);
+  return ceiling;
 }
 
 function lineCount(text: string): number {
@@ -193,12 +202,18 @@ function renderPreview(options: {
 }
 
 export function resolveBashContextGuardConfig(env: Env = process.env): BashContextGuardConfig {
+  const settings = resolveHashlineJsonSettings().settings.bashContextGuard;
+  const enabled = env.PI_HASHLINE_BASH_CONTEXT_GUARD === "0"
+    ? false
+    : env.PI_HASHLINE_BASH_CONTEXT_GUARD !== undefined
+      ? true
+      : settings?.enabled ?? true;
   return {
-    enabled: env.PI_HASHLINE_BASH_CONTEXT_GUARD !== "0",
-    maxLines: resolveDimension(env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES, BASH_CONTEXT_GUARD_DEFAULT_MAX_LINES),
-    maxBytes: resolveDimension(env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES, BASH_CONTEXT_GUARD_DEFAULT_MAX_BYTES),
-    headLines: resolveDimension(env.PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES, BASH_CONTEXT_GUARD_DEFAULT_HEAD_LINES),
-    tailLines: resolveDimension(env.PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES, BASH_CONTEXT_GUARD_DEFAULT_TAIL_LINES),
+    enabled,
+    maxLines: resolveDimension(env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES, settings?.maxLines, BASH_CONTEXT_GUARD_DEFAULT_MAX_LINES),
+    maxBytes: resolveDimension(env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES, settings?.maxBytes, BASH_CONTEXT_GUARD_DEFAULT_MAX_BYTES),
+    headLines: resolveDimension(env.PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES, settings?.headLines, BASH_CONTEXT_GUARD_DEFAULT_HEAD_LINES),
+    tailLines: resolveDimension(env.PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES, settings?.tailLines, BASH_CONTEXT_GUARD_DEFAULT_TAIL_LINES),
   };
 }
 

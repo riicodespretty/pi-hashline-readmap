@@ -25,6 +25,33 @@ This document is not a bug diary. It is the current testing reference for what t
 
 ## Expected functionality
 
+### Hashline settings JSON
+
+Expected behavior:
+
+- reads global settings from `~/.pi/agent/hashline-readmap/settings.json`
+- reads project settings from `<repo>/.pi/hashline-readmap/settings.json`
+- does not read unsupported paths such as `~/.pi/agent/settings.json`, `<repo>/.pi/settings.json`, `~/.pi/hashline-readmap/settings.json`, or `<repo>/.pi/hashline-readmap.json`
+- applies precedence as env vars > project JSON > global JSON > built-in defaults
+- supports JSON fields for grep budgets, map-cache directory/enabled state, and Bash context guard settings
+- preserves existing env-only behavior for all supported `PI_HASHLINE_*` variables
+- ignores malformed JSON files safely and reports non-fatal warnings where available
+- ignores invalid field values field-by-field where practical
+- treats budget fields as strict positive base-10 integers and ignores zero, negative, signed, decimal, hex, exponent, separator, empty, and whitespace-only values
+
+Practical expectation:
+
+- a user should be able to move durable Hashline configuration out of shell startup files and into global or project JSON settings, while still using env vars for temporary overrides
+
+JSON settings verification procedure:
+
+- create a temporary global settings file at `~/.pi/agent/hashline-readmap/settings.json` with a below-default `grep.maxLines`, run `grep` against a result set larger than that limit, and confirm the visible output budget follows the JSON value
+- create a project settings file at `<repo>/.pi/hashline-readmap/settings.json` with a different `grep.maxLines` and confirm it overrides the global JSON value when no `PI_HASHLINE_GREP_MAX_LINES` env var is set
+- remove or rename both canonical JSON files, set the equivalent `PI_HASHLINE_*` env vars, and confirm the existing env-only grep, map-cache, and Bash context-guard behavior still applies
+- set both JSON and env values for the same field, then confirm the env value wins; include `PI_HASHLINE_MAP_CACHE_DIR`, `PI_HASHLINE_NO_PERSIST_MAPS=1`, and `PI_HASHLINE_BASH_CONTEXT_GUARD=0` in this override check
+- put settings in unsupported paths such as `~/.pi/agent/settings.json`, `<repo>/.pi/settings.json`, `~/.pi/hashline-readmap/settings.json`, or `<repo>/.pi/hashline-readmap.json`, with canonical files absent, and confirm those files have no effect
+- introduce malformed JSON and invalid budget values, then confirm public tool resolvers continue without throwing and fall back to valid env, valid other JSON fields, or defaults
+
 ### `read`
 
 Expected behavior:

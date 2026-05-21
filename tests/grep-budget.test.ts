@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
 import { resolveGrepOutputBudget, parsePositiveBase10Int } from "../src/grep-budget.js";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { randomBytes } from "node:crypto";
+import { __resetHashlineSettingsPathsForTest, __setHashlineSettingsPathsForTest } from "../src/hashline-settings.js";
 
 const LINES_DEFAULT = DEFAULT_MAX_LINES; // 2000
 const BYTES_DEFAULT = Math.min(DEFAULT_MAX_BYTES, 50 * 1024); // 51200
@@ -48,6 +53,10 @@ describe("resolveGrepOutputBudget", () => {
 	beforeEach(() => {
 		delete process.env.PI_HASHLINE_GREP_MAX_LINES;
 		delete process.env.PI_HASHLINE_GREP_MAX_BYTES;
+		__setHashlineSettingsPathsForTest({
+			globalSettingsPath: join(tmpdir(), `missing-global-${randomBytes(6).toString("hex")}.json`),
+			projectSettingsPath: join(tmpdir(), `missing-project-${randomBytes(6).toString("hex")}.json`),
+		});
 	});
 
 	afterEach(() => {
@@ -55,6 +64,7 @@ describe("resolveGrepOutputBudget", () => {
 		else process.env.PI_HASHLINE_GREP_MAX_LINES = SAVED.lines;
 		if (SAVED.bytes === undefined) delete process.env.PI_HASHLINE_GREP_MAX_BYTES;
 		else process.env.PI_HASHLINE_GREP_MAX_BYTES = SAVED.bytes;
+		__resetHashlineSettingsPathsForTest();
 	});
 
 	it("returns current defaults when both env vars are unset", () => {
@@ -62,6 +72,82 @@ describe("resolveGrepOutputBudget", () => {
 			maxLines: LINES_DEFAULT,
 			maxBytes: BYTES_DEFAULT,
 		});
+	});
+
+	it("uses JSON grep budget when env is unset", async () => {
+		const root = join(tmpdir(), `grep-json-${randomBytes(6).toString("hex")}`);
+		const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+		await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+		await writeFile(projectSettingsPath, JSON.stringify({ grep: { maxLines: 12, maxBytes: 1024 } }));
+		__setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+		try {
+			expect(resolveGrepOutputBudget()).toEqual({ maxLines: 12, maxBytes: 1024 });
+		} finally {
+			__resetHashlineSettingsPathsForTest();
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+
+	it("lets env grep budget override JSON", async () => {
+		const root = join(tmpdir(), `grep-env-${randomBytes(6).toString("hex")}`);
+		const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+		await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+		await writeFile(projectSettingsPath, JSON.stringify({ grep: { maxLines: 12, maxBytes: 1024 } }));
+		__setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+		process.env.PI_HASHLINE_GREP_MAX_LINES = "7";
+		process.env.PI_HASHLINE_GREP_MAX_BYTES = "512";
+		try {
+			expect(resolveGrepOutputBudget()).toEqual({ maxLines: 7, maxBytes: 512 });
+		} finally {
+			delete process.env.PI_HASHLINE_GREP_MAX_LINES;
+			delete process.env.PI_HASHLINE_GREP_MAX_BYTES;
+			__resetHashlineSettingsPathsForTest();
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	it("falls through to JSON grep budget when env value is invalid", async () => {
+		const root = join(tmpdir(), `grep-invalid-env-json-${randomBytes(6).toString("hex")}`);
+		const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+		await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+		await writeFile(projectSettingsPath, JSON.stringify({ grep: { maxLines: 12, maxBytes: 1024 } }));
+		__setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+		process.env.PI_HASHLINE_GREP_MAX_LINES = "abc";
+		process.env.PI_HASHLINE_GREP_MAX_BYTES = "1e3";
+		try {
+			expect(resolveGrepOutputBudget()).toEqual({ maxLines: 12, maxBytes: 1024 });
+		} finally {
+			delete process.env.PI_HASHLINE_GREP_MAX_LINES;
+			delete process.env.PI_HASHLINE_GREP_MAX_BYTES;
+			__resetHashlineSettingsPathsForTest();
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	it("clamps above-default JSON grep budget to the built-in ceilings", async () => {
+		const root = join(tmpdir(), `grep-clamp-${randomBytes(6).toString("hex")}`);
+		const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+		await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+		await writeFile(projectSettingsPath, JSON.stringify({ grep: { maxLines: 99999, maxBytes: 999999999 } }));
+		__setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+		try {
+			expect(resolveGrepOutputBudget()).toEqual({ maxLines: LINES_DEFAULT, maxBytes: BYTES_DEFAULT });
+		} finally {
+			__resetHashlineSettingsPathsForTest();
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps existing env-only grep budget behavior", () => {
+		process.env.PI_HASHLINE_GREP_MAX_LINES = "10";
+		process.env.PI_HASHLINE_GREP_MAX_BYTES = "1024";
+		try {
+			expect(resolveGrepOutputBudget()).toEqual({ maxLines: 10, maxBytes: 1024 });
+		} finally {
+			delete process.env.PI_HASHLINE_GREP_MAX_LINES;
+			delete process.env.PI_HASHLINE_GREP_MAX_BYTES;
+		}
 	});
 
 	it("uses a valid below-default lines value as-is", () => {
