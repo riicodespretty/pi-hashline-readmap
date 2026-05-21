@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
+import { resolveHashlineJsonSettings } from "./hashline-settings.js";
 
 const POSITIVE_BASE10_INT = /^[1-9][0-9]*$/;
 
@@ -38,10 +39,18 @@ export interface GrepOutputBudget {
 export const GREP_OUTPUT_DEFAULT_MAX_LINES = DEFAULT_MAX_LINES;
 export const GREP_OUTPUT_DEFAULT_MAX_BYTES = Math.min(DEFAULT_MAX_BYTES, 50 * 1024);
 
-function resolveDimension(rawEnvValue: string | undefined, ceiling: number): number {
+function resolveEnvDimension(rawEnvValue: string | undefined, ceiling: number): number | undefined {
 	const parsed = parsePositiveBase10Int(rawEnvValue);
-	if (parsed === undefined) return ceiling;
-	return Math.min(parsed, ceiling);
+	return parsed === undefined ? undefined : Math.min(parsed, ceiling);
+}
+
+function resolveDimension(rawEnvValue: string | undefined, jsonValue: number | undefined, ceiling: number): number {
+	if (rawEnvValue !== undefined) {
+		const envValue = resolveEnvDimension(rawEnvValue, ceiling);
+		if (envValue !== undefined) return envValue;
+	}
+	if (jsonValue !== undefined) return Math.min(jsonValue, ceiling);
+	return ceiling;
 }
 
 /**
@@ -54,13 +63,16 @@ function resolveDimension(rawEnvValue: string | undefined, ceiling: number): num
  * are used as-is.
  */
 export function resolveGrepOutputBudget(): GrepOutputBudget {
+	const settings = resolveHashlineJsonSettings().settings.grep;
 	return {
 		maxLines: resolveDimension(
 			process.env.PI_HASHLINE_GREP_MAX_LINES,
+			settings?.maxLines,
 			GREP_OUTPUT_DEFAULT_MAX_LINES,
 		),
 		maxBytes: resolveDimension(
 			process.env.PI_HASHLINE_GREP_MAX_BYTES,
+			settings?.maxBytes,
 			GREP_OUTPUT_DEFAULT_MAX_BYTES,
 		),
 	};

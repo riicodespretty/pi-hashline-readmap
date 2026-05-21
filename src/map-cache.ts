@@ -7,6 +7,7 @@ import {
   contentHashFor64k,
   readCached,
   writeCached,
+  persistenceEnabled,
 } from "./persistent-map-cache.js";
 interface CacheEntry {
 	mtimeMs: number;
@@ -16,9 +17,6 @@ interface CacheEntry {
 export const MAP_CACHE_MAX_SIZE = 500;
 const cache = new Map<string, CacheEntry>();
 let maxSize = MAP_CACHE_MAX_SIZE;
-function persistenceEnabled(): boolean {
-	return process.env.PI_HASHLINE_NO_PERSIST_MAPS !== "1";
-}
 function rememberInMemory(absPath: string, entry: CacheEntry): void {
 	if (cache.has(absPath)) cache.delete(absPath);
 	cache.set(absPath, entry);

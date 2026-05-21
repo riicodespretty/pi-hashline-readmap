@@ -227,23 +227,81 @@ PI_RTK_BYPASS=1 git log --stat
 
 ## Configuration
 
-Most users do not need configuration. Use environment variables when you want to tighten visible grep output budgets, change where structural map caches are stored, disable persistent map caching, tune Bash output recovery, or enable context-hygiene debugging.
+Most users do not need configuration. Durable Hashline options can live in JSON settings files, while existing environment variables remain supported for temporary overrides and are **not deprecated**.
+
+Canonical settings files:
+
+- Global: `~/.pi/agent/hashline-readmap/settings.json`
+- Project: `<repo>/.pi/hashline-readmap/settings.json`
+
+Precedence is: environment variables > project JSON > global JSON > built-in defaults. Project JSON overrides global JSON field-by-field. Unsupported legacy or alias paths are intentionally not read: `~/.pi/agent/settings.json`, `<repo>/.pi/settings.json`, `~/.pi/hashline-readmap/settings.json`, and `<repo>/.pi/hashline-readmap.json`.
+
+Example project settings:
+
+```json
+{
+  "grep": {
+    "maxLines": 1200,
+    "maxBytes": 40960
+  },
+  "mapCache": {
+    "dir": ".cache/hashline/maps",
+    "enabled": true
+  },
+  "bashContextGuard": {
+    "enabled": true,
+    "maxLines": 1500,
+    "maxBytes": 40960,
+    "headLines": 60,
+    "tailLines": 100
+  }
+}
+```
+
+JSON fields:
+
+| JSON field | Environment override | Default / ceiling behavior |
+|---|---|---|
+| `grep.maxLines` | `PI_HASHLINE_GREP_MAX_LINES` | Tightens `grep`'s final visible line budget; above-default values are clamped down to the built-in default |
+| `grep.maxBytes` | `PI_HASHLINE_GREP_MAX_BYTES` | Tightens `grep`'s final visible byte budget; above-default values are clamped down to the built-in default |
+| `mapCache.dir` | `PI_HASHLINE_MAP_CACHE_DIR` | Overrides the persistent structural-map cache directory; otherwise falls back to `$XDG_CACHE_HOME/pi-hashline-readmap/maps`, then `~/.cache/pi-hashline-readmap/maps` |
+| `mapCache.enabled` | `PI_HASHLINE_NO_PERSIST_MAPS=1` | Defaults to `true`; the env var disables on-disk map caching regardless of JSON |
+| `bashContextGuard.enabled` | `PI_HASHLINE_BASH_CONTEXT_GUARD` | Defaults to `true`; exact env value `0` disables the guard, any other set value enables it |
+| `bashContextGuard.maxLines` | `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES` | Tightens the post-RTK Bash guard line budget; default/ceiling `2000` |
+| `bashContextGuard.maxBytes` | `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES` | Tightens the post-RTK Bash guard byte budget; default/ceiling `51200` raw bytes |
+| `bashContextGuard.headLines` | `PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES` | Tightens the guarded preview head size; default/ceiling `80` |
+| `bashContextGuard.tailLines` | `PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES` | Tightens the guarded preview tail size; default/ceiling `120` |
+
+Budget fields must be strict positive base-10 integers. Zero, negative, signed, decimal, hexadecimal, exponent notation, separators, empty strings, and whitespace-only values are ignored. Malformed JSON files and invalid fields degrade safely: valid fields continue to apply where practical, invalid fields are ignored, and the loader emits non-fatal warnings where available.
+
+Other environment-only options:
 
 | Variable | Purpose | Default / behavior |
 |---|---|---|
-| `PI_HASHLINE_GREP_MAX_LINES` | Tighten `grep`'s final visible line budget | Positive base-10 integer; invalid/unset values use the built-in default; above-default values are clamped down |
-| `PI_HASHLINE_GREP_MAX_BYTES` | Tighten `grep`'s final visible byte budget | Positive base-10 integer; invalid/unset values use the built-in default; above-default values are clamped down |
-| `PI_HASHLINE_MAP_CACHE_DIR` | Override the persistent structural-map cache directory | Uses the provided path verbatim |
 | `XDG_CACHE_HOME` | Base directory for the persistent map cache when no explicit cache dir is set | Cache lives under `$XDG_CACHE_HOME/pi-hashline-readmap/maps` |
-| `PI_HASHLINE_NO_PERSIST_MAPS=1` | Disable the on-disk structural-map cache | Keeps caching in-memory only |
 | `PI_NUSHELL_CONFIG` | Override the Nushell config path used by `nu` | Otherwise prefers `~/.config/pi/nushell/config.nu`, then `--no-config-file` |
 | `PI_RTK_BYPASS=1` | Disable route-specific `bash` compression for one command invocation | ANSI is still stripped; anti-pattern hints still apply; the Bash context guard can still trim oversized output |
-| `PI_HASHLINE_BASH_CONTEXT_GUARD=0` | Disable the Bash context guard and original-output restoration layer | Any value other than exact `0` leaves the default-on guard enabled |
-| `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES` | Tighten the post-RTK Bash guard line budget | Positive base-10 integer; invalid/unset values use `2000`; above-default values are clamped down |
-| `PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES` | Tighten the post-RTK Bash guard byte budget | Positive base-10 integer interpreted as raw bytes; invalid/unset values use `51200`; above-default values are clamped down |
-| `PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES` | Tighten the guarded preview head size | Positive base-10 integer; invalid/unset values use `80`; above-default values are clamped down |
-| `PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES` | Tighten the guarded preview tail size | Positive base-10 integer; invalid/unset values use `120`; above-default values are clamped down |
 | `PI_CONTEXT_HYGIENE_DEBUG=1` | Register the debug-only `context_hygiene_report` read-only tool | Disabled unless explicitly set to `1` |
+
+Migration example:
+
+```bash
+# before: shell startup file
+export PI_HASHLINE_GREP_MAX_LINES=1200
+export PI_HASHLINE_GREP_MAX_BYTES=40960
+export PI_HASHLINE_MAP_CACHE_DIR=.cache/hashline/maps
+export PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES=1500
+```
+
+After, in `<repo>/.pi/hashline-readmap/settings.json`:
+
+```json
+{
+  "grep": { "maxLines": 1200, "maxBytes": 40960 },
+  "mapCache": { "dir": ".cache/hashline/maps" },
+  "bashContextGuard": { "maxLines": 1500 }
+}
+```
 
 ## Advanced documentation
 

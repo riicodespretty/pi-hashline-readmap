@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { randomBytes } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   BASH_CONTEXT_GUARD_DEFAULT_HEAD_LINES,
   BASH_CONTEXT_GUARD_DEFAULT_MAX_BYTES,
@@ -6,6 +10,7 @@ import {
   BASH_CONTEXT_GUARD_DEFAULT_TAIL_LINES,
   resolveBashContextGuardConfig,
 } from "../src/rtk/bash-context-guard.js";
+import { __resetHashlineSettingsPathsForTest, __setHashlineSettingsPathsForTest } from "../src/hashline-settings.js";
 
 describe("resolveBashContextGuardConfig", () => {
   const saved = {
@@ -22,6 +27,10 @@ describe("resolveBashContextGuardConfig", () => {
     delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES;
     delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES;
     delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES;
+    __setHashlineSettingsPathsForTest({
+      globalSettingsPath: join(tmpdir(), `missing-global-${randomBytes(6).toString("hex")}.json`),
+      projectSettingsPath: join(tmpdir(), `missing-project-${randomBytes(6).toString("hex")}.json`),
+    });
   });
 
   afterEach(() => {
@@ -35,6 +44,7 @@ describe("resolveBashContextGuardConfig", () => {
     else process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES = saved.headLines;
     if (saved.tailLines === undefined) delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES;
     else process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES = saved.tailLines;
+    __resetHashlineSettingsPathsForTest();
   });
 
   it("uses conservative defaults when env vars are unset", () => {
@@ -51,6 +61,82 @@ describe("resolveBashContextGuardConfig", () => {
     expect(BASH_CONTEXT_GUARD_DEFAULT_TAIL_LINES).toBe(120);
   });
 
+
+  it("uses JSON Bash context guard config when env is unset", async () => {
+    const root = join(tmpdir(), `bash-json-${randomBytes(6).toString("hex")}`);
+    const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+    await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+    await writeFile(projectSettingsPath, JSON.stringify({
+      bashContextGuard: {
+        enabled: false,
+        maxLines: 25,
+        maxBytes: 1024,
+        headLines: 3,
+        tailLines: 7,
+      },
+    }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+    try {
+      expect(resolveBashContextGuardConfig()).toEqual({
+        enabled: false,
+        maxLines: 25,
+        maxBytes: 1024,
+        headLines: 3,
+        tailLines: 7,
+      });
+    } finally {
+      __resetHashlineSettingsPathsForTest();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+
+  it("lets nonzero Bash guard env override JSON disabled", async () => {
+    const root = join(tmpdir(), `bash-env-${randomBytes(6).toString("hex")}`);
+    const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+    await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+    await writeFile(projectSettingsPath, JSON.stringify({ bashContextGuard: { enabled: false } }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD = "false";
+    try {
+      expect(resolveBashContextGuardConfig().enabled).toBe(true);
+    } finally {
+      delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD;
+      __resetHashlineSettingsPathsForTest();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("falls through to JSON Bash guard budget when env values are invalid", async () => {
+    const root = join(tmpdir(), `bash-invalid-env-json-${randomBytes(6).toString("hex")}`);
+    const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+    await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+    await writeFile(projectSettingsPath, JSON.stringify({
+      bashContextGuard: { maxLines: 25, maxBytes: 1024, headLines: 3, tailLines: 7 },
+    }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES = "abc";
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES = "1e3";
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES = "0";
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES = "3.14";
+    try {
+      expect(resolveBashContextGuardConfig()).toEqual({
+        enabled: true,
+        maxLines: 25,
+        maxBytes: 1024,
+        headLines: 3,
+        tailLines: 7,
+      });
+    } finally {
+      delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES;
+      delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES;
+      delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES;
+      delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES;
+      __resetHashlineSettingsPathsForTest();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("uses valid below-default positive base-10 env values", () => {
     process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES = "25";
     process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES = "1024";
@@ -64,6 +150,27 @@ describe("resolveBashContextGuardConfig", () => {
       headLines: 3,
       tailLines: 7,
     });
+  });
+
+  it("keeps existing env-only Bash guard budget behavior", () => {
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES = "25";
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES = "1024";
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES = "3";
+    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES = "7";
+    try {
+      expect(resolveBashContextGuardConfig()).toEqual({
+        enabled: true,
+        maxLines: 25,
+        maxBytes: 1024,
+        headLines: 3,
+        tailLines: 7,
+      });
+    } finally {
+      delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_LINES;
+      delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_MAX_BYTES;
+      delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_HEAD_LINES;
+      delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD_TAIL_LINES;
+    }
   });
 
   it("trims surrounding whitespace before parsing env values", () => {
@@ -106,12 +213,41 @@ describe("resolveBashContextGuardConfig", () => {
     });
   });
 
+  it("clamps above-default JSON Bash guard budget fields", async () => {
+    const root = join(tmpdir(), `bash-clamp-${randomBytes(6).toString("hex")}`);
+    const projectSettingsPath = join(root, "repo/.pi/hashline-readmap/settings.json");
+    await mkdir(join(projectSettingsPath, ".."), { recursive: true });
+    await writeFile(projectSettingsPath, JSON.stringify({
+      bashContextGuard: {
+        maxLines: 99999,
+        maxBytes: 999999999,
+        headLines: 999,
+        tailLines: 999,
+      },
+    }));
+    __setHashlineSettingsPathsForTest({ globalSettingsPath: join(root, "missing.json"), projectSettingsPath });
+    try {
+      expect(resolveBashContextGuardConfig()).toMatchObject({
+        maxLines: BASH_CONTEXT_GUARD_DEFAULT_MAX_LINES,
+        maxBytes: BASH_CONTEXT_GUARD_DEFAULT_MAX_BYTES,
+        headLines: BASH_CONTEXT_GUARD_DEFAULT_HEAD_LINES,
+        tailLines: BASH_CONTEXT_GUARD_DEFAULT_TAIL_LINES,
+      });
+    } finally {
+      __resetHashlineSettingsPathsForTest();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("disables the guard only when PI_HASHLINE_BASH_CONTEXT_GUARD is exactly 0", () => {
     process.env.PI_HASHLINE_BASH_CONTEXT_GUARD = "0";
-    expect(resolveBashContextGuardConfig().enabled).toBe(false);
-
-    process.env.PI_HASHLINE_BASH_CONTEXT_GUARD = "false";
-    expect(resolveBashContextGuardConfig().enabled).toBe(true);
+    try {
+      expect(resolveBashContextGuardConfig().enabled).toBe(false);
+      process.env.PI_HASHLINE_BASH_CONTEXT_GUARD = "false";
+      expect(resolveBashContextGuardConfig().enabled).toBe(true);
+    } finally {
+      delete process.env.PI_HASHLINE_BASH_CONTEXT_GUARD;
+    }
   });
 
   it("re-reads env on every call", () => {
