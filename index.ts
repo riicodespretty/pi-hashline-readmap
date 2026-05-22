@@ -207,10 +207,14 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   (globalThis as any).__piHashlineReadmapApi = { setFffEngine };
   (globalThis as any).__piHashlineReadmap = true;
 
-  // If pi-fff was already loaded, its engine is already available
+  // Primary: pi.events — subscribe to fff:engine-ready and signal we're ready
+  pi.events.on("fff:engine-ready", (handle: any) => setFffEngine(handle));
+  pi.events.emit("hashline:ready");
+
+  // Fallback: globalThis check for already-loaded pi-fff
   const existingFff = (globalThis as any).__piFff as
     { getOrCreateFinder: (cwd: string) => Promise<any>; destroyFinder: () => void } | undefined;
-  if (existingFff) {
+  if (existingFff && !fffFinderGetter) {
     setFffEngine(existingFff);
   }
 
