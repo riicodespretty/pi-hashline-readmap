@@ -504,30 +504,6 @@ describe("find TUI renderers", () => {
   });
 });
 
-import { readFileSync } from "node:fs";
-
-describe("find index.ts registration", () => {
-  it("index.ts imports and calls registerFindTool", () => {
-    const root = resolve(__dirname, "..");
-    const source = readFileSync(resolve(root, "index.ts"), "utf8");
-    expect(source).toContain('import { registerFindTool } from "./src/find.js"');
-    expect(source).toContain("registerFindTool(pi)");
-  });
-
-  it("extension entry point registers find tool", async () => {
-    const { pathToFileURL } = await import("node:url");
-    const root = resolve(__dirname, "..");
-    const mod = await import(pathToFileURL(resolve(root, "index.ts")).href);
-    const tools: string[] = [];
-    const mockPi = {
-      registerTool(def: any) { tools.push(def.name); },
-      on() {},
-      events: { emit() {}, on() {} },
-    };
-    mod.default(mockPi as any);
-    expect(tools).toContain("find");
-  });
-});
 
 describe("find path resolution", () => {
   afterEach(() => { vi.restoreAllMocks(); _testable.isFdAvailable = _originalIsFdAvailable; });

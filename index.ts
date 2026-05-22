@@ -1,12 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerReadTool } from "./src/read.js";
 import { registerEditTool } from "./src/edit.js";
-import { registerGrepTool } from "./src/grep.js";
-import { registerSgTool, isSgAvailable } from "./src/sg.js";
+import { registerSgTool } from "./src/sg.js";
 import { registerNuTool } from "./src/nu.js";
 import { registerWriteTool } from "./src/write.js";
 import { registerLsTool } from "./src/ls.js";
-import { registerFindTool } from "./src/find.js";
 import { registerBashRendererTool } from "./src/bash-renderer.js";
 import { filterBashOutput } from "./src/rtk/bash-filter.js";
 import { buildRtkCompaction } from "./src/rtk/rtk-compaction.js";
@@ -196,27 +194,19 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
 
   const readTool = registerReadTool(pi, { onSuccessfulRead: noteRead });
   const editTool = registerEditTool(pi, { wasReadInSession });
-  const sgAvailable = isSgAvailable();
-  const astSearchGuideline = sgAvailable
-    ? "Use grep summary for counts; use ast_search for structural code patterns."
-    : "Use grep summary for counts; install ast-grep to enable ast_search.";
 
-  const grepTool = registerGrepTool(pi, { astSearchGuideline, onFileAnchored: noteRead });
   const sgTool = registerSgTool(pi, { onFileAnchored: noteRead });
   const nuTool = registerNuTool(pi);
   const writeTool = registerWriteTool(pi, { onFileAnchored: noteRead });
   const lsTool = registerLsTool(pi);
-  const findTool = registerFindTool(pi);
   registerBashRendererTool(pi, { cwd: process.cwd() });
   const contextHygieneDebugTool = registerContextHygieneDebugTool(pi);
   const toolExecutors = {
     read: readTool,
     edit: editTool,
-    grep: grepTool,
     ast_search: sgTool,
     write: writeTool,
     ls: lsTool,
-    find: findTool,
     ...(nuTool ? { nu: nuTool } : {}),
     ...(contextHygieneDebugTool ? { context_hygiene_report: contextHygieneDebugTool } : {}),
   };

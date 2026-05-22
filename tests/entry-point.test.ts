@@ -13,11 +13,10 @@ describe("extension entry point (AC8)", () => {
     expect(typeof mod.default).toBe("function");
     expect(mod.default.length).toBe(1);
   });
-  it("index.ts imports read/edit/grep with .js specifiers", () => {
+  it("index.ts imports read/edit with .js specifiers", () => {
     const source = readFileSync(resolve(root, "index.ts"), "utf8");
     expect(source).toContain('import { registerReadTool } from "./src/read.js";');
     expect(source).toContain('import { registerEditTool } from "./src/edit.js";');
-    expect(source).toContain('import { registerGrepTool } from "./src/grep.js";');
   });
   it("registers ast_search tool", async () => {
     const mod = await import(pathToFileURL(resolve(root, "index.ts")).href);

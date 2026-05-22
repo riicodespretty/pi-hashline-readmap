@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectHashlineSystemPromptMetadata } from "./helpers/pi-prompt-metadata-harness.js";
 
-const EXPECTED_TOOLS = ["read", "edit", "grep", "find", "ls", "write", "ast_search", "nu"] as const;
+const EXPECTED_TOOLS = ["read", "edit", "ls", "write", "ast_search", "nu"] as const;
 
 describe("Pi system prompt metadata integration", () => {
   afterEach(() => {
