@@ -208,8 +208,8 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   (globalThis as any).__piHashlineReadmap = true;
 
   // Primary: pi.events — subscribe to fff:engine-ready and signal we're ready
-  (pi.events as any).on("fff:engine-ready", (handle: any) => setFffEngine(handle));
-  (pi.events as any).emit("hashline:ready");
+  pi.events.on("fff:engine-ready", (handle: any) => setFffEngine(handle));
+  pi.events.emit("hashline:ready");
 
   // Fallback: globalThis check for already-loaded pi-fff
   const existingFff = (globalThis as any).__piFff as
