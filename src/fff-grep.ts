@@ -380,15 +380,17 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 				beforeContext: typeof p.context === "number" ? p.context : 0,
 				afterContext: typeof p.context === "number" ? p.context : 0,
 				pageSize: typeof p.limit === "number" && p.limit > 0 ? p.limit : 100,
-				maxMatchesPerFile: 200,
+				maxMatchesPerFile: GREP_MAX_MATCHES_PER_FILE,
 				classifyDefinitions: false,
 			};
 
 			const result = finder.grep(query, fffOpts);
-			const grepResult = result.ok ? result.value : null;
-			if (!grepResult || !grepResult.items?.length) {
-				const empty = { content: [{ type: "text" as const, text: "" }], details: { ptcValue: { tool: "grep", ok: true, summary: !!p.summary, totalMatches: 0, records: [] } } };
-				return empty;
+			if (!result.ok) {
+				return { content: [{ type: "text" as const, text: `Grep error: ${result.error}` }], isError: true, details: { ptcValue: { tool: "grep" as const, ok: false, error: buildPtcError("fff-error", result.error) } } };
+			}
+			const grepResult = result.value;
+			if (!grepResult.items?.length) {
+				return { content: [{ type: "text" as const, text: "" }], details: { ptcValue: { tool: "grep" as const, ok: true, summary: !!p.summary, totalMatches: 0, records: [] } } };
 			}
 
 			const items = grepResult.items as any[];

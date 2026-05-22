@@ -200,17 +200,19 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 			if (type === "any") {
 				// Mixed search: files + directories interleaved by score
 				const mixedResult = finder.mixedSearch(query, searchOpts);
-				if (mixedResult.ok) {
-					results = mixedResult.value.items.map((i: any) => ({
-						path: i.item.relativePath,
-						type: i.type === "file" ? "file" as const : "dir" as const,
-					}));
-				} else {
-					results = [];
+				if (!mixedResult.ok) {
+					return { content: [{ type: "text" as const, text: `Find error: ${mixedResult.error}` }], isError: true, details: { ptcValue: { tool: "find" as const, ok: false, path: params.path ?? cwd, error: buildPtcError("fff-error", mixedResult.error) } } };
 				}
+				results = mixedResult.value.items.map((i: any) => ({
+					path: i.item.relativePath,
+					type: i.type === "file" ? "file" as const : "dir" as const,
+				}));
 			} else if (type === "dir") {
 				const dirResult = finder.directorySearch(query, searchOpts);
-				results = dirResult.ok ? dirResult.value.items.map((i: any) => ({ path: i.relativePath, type: "dir" as const })) : [];
+				if (!dirResult.ok) {
+					return { content: [{ type: "text" as const, text: `Find error: ${dirResult.error}` }], isError: true, details: { ptcValue: { tool: "find" as const, ok: false, path: params.path ?? cwd, error: buildPtcError("fff-error", dirResult.error) } } };
+				}
+				results = dirResult.value.items.map((i: any) => ({ path: i.relativePath, type: "dir" as const }));
 			} else {
 				// file search — use fileSearch for fuzzy/glob, filter with regex if needed
 				const fileResult = finder.fileSearch(query, searchOpts);
@@ -228,7 +230,7 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 					}
 					results = items.map((i: any) => ({ path: i.relativePath, type: "file" as const }));
 				} else {
-					results = [];
+					return { content: [{ type: "text" as const, text: `Find error: ${fileResult.error}` }], isError: true, details: { ptcValue: { tool: "find" as const, ok: false, path: params.path ?? cwd, error: buildPtcError("fff-error", fileResult.error) } } };
 				}
 			}
 
