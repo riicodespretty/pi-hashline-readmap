@@ -7,6 +7,7 @@ import { Buffer } from "node:buffer";
 import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { buildPtcError } from "./ptc-value.js";
 import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
+import { parseRelativeOrIsoDate, parseSize } from "./find-parsers.js";
 import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
 import { throwIfAborted } from "./runtime";
 
@@ -137,6 +138,22 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 				regex: Type.Optional(
 					Type.Boolean({ description: "Treat pattern as regex" }),
 				),
+				sortBy: Type.Optional(
+					Type.Union(
+						[Type.Literal("name"), Type.Literal("mtime"), Type.Literal("size")],
+						{ description: "Sort key" },
+					),
+				),
+				reverse: Type.Optional(
+					Type.Boolean({ description: "Reverse sort order" }),
+				),
+				modifiedSince: Type.Optional(Type.String({ description: "Modified after time" })),
+				minSize: Type.Optional(
+					Type.Union([Type.Number(), Type.String()], { description: "Minimum file size" }),
+				),
+				maxSize: Type.Optional(
+					Type.Union([Type.Number(), Type.String()], { description: "Maximum file size" }),
+				),
 			},
 			{ required: ["pattern"] },
 		),
@@ -149,6 +166,11 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 				type?: "file" | "dir" | "any";
 				maxDepth?: number;
 				regex?: boolean;
+				sortBy?: "name" | "mtime" | "size";
+				reverse?: boolean;
+				modifiedSince?: string;
+				minSize?: number | string;
+				maxSize?: number | string;
 			},
 			_signal: AbortSignal | undefined,
 			_onUpdate: any,
@@ -206,6 +228,8 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 				results = mixedResult.value.items.map((i: any) => ({
 					path: i.item.relativePath,
 					type: i.type === "file" ? "file" as const : "dir" as const,
+					_size: i.type === "file" ? i.item.size : undefined,
+					_modified: i.type === "file" ? i.item.modified : undefined,
 				}));
 			} else if (type === "dir") {
 				const dirResult = finder.directorySearch(query, searchOpts);
@@ -228,7 +252,7 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 						}
 						items = items.filter((i: any) => re.test(i.fileName));
 					}
-					results = items.map((i: any) => ({ path: i.relativePath, type: "file" as const }));
+					results = items.map((i: any) => ({ path: i.relativePath, type: "file" as const, _size: i.size, _modified: i.modified }));
 				} else {
 					return { content: [{ type: "text" as const, text: `Find error: ${fileResult.error}` }], isError: true, details: { ptcValue: { tool: "find" as const, ok: false, path: params.path ?? cwd, error: buildPtcError("fff-error", fileResult.error) } } };
 				}
@@ -242,9 +266,67 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 				});
 			}
 
-			const totalCount = results.length;
+			// Parse and apply metadata filters (same as stock find)
+			let modifiedSinceMs: number | null = null;
+			let minSizeBytes: number | null = null;
+			let maxSizeBytes: number | null = null;
+			try {
+				if (params.modifiedSince !== undefined) {
+					modifiedSinceMs = parseRelativeOrIsoDate("modifiedSince", params.modifiedSince).getTime();
+				}
+				if (params.minSize !== undefined) {
+					minSizeBytes = parseSize("minSize", params.minSize);
+				}
+				if (params.maxSize !== undefined) {
+					maxSizeBytes = parseSize("maxSize", params.maxSize);
+				}
+			} catch (err) {
+				const msg = `Error: ${(err as Error).message}`;
+				return { content: [{ type: "text" as const, text: msg }], isError: true, details: { ptcValue: { tool: "find" as const, ok: false, path: params.path ?? cwd, error: buildPtcError("invalid-params-combo", msg) } } };
+			}
+
+			const sortBy = params.sortBy ?? "name";
+			const dir = params.reverse ? -1 : 1;
+
+			// Filter by modifiedSince / minSize / maxSize (only when we have metadata)
+			if (modifiedSinceMs !== null || minSizeBytes !== null || maxSizeBytes !== null) {
+				results = results.filter((e: any) => {
+					if (modifiedSinceMs !== null) {
+						if (e._modified === undefined) return false;
+						if ((e._modified as number) * 1000 <= modifiedSinceMs) return false;
+					}
+					if (e.type === "file") {
+						if (minSizeBytes !== null && e._size !== undefined && e._size < minSizeBytes) return false;
+						if (maxSizeBytes !== null && e._size !== undefined && e._size > maxSizeBytes) return false;
+					}
+					return true;
+				});
+			}
+
+			// Sort results
+			if (sortBy !== "name" || params.reverse) {
+				results.sort((a: any, b: any) => {
+					if (sortBy === "mtime") {
+						const cmp = ((a._modified ?? 0) - (b._modified ?? 0)) * dir;
+						if (cmp !== 0) return cmp;
+						return a.path.localeCompare(b.path);
+					}
+					if (sortBy === "size") {
+						const cmp = ((a._size ?? 0) - (b._size ?? 0)) * dir;
+						if (cmp !== 0) return cmp;
+						return a.path.localeCompare(b.path);
+					}
+					return a.path.localeCompare(b.path) * dir;
+				});
+			} else {
+				results.sort((a: any, b: any) => a.path.localeCompare(b.path));
+			}
+
+			// Strip internal metadata fields before output
+			const cleanResults = results.map((e: any) => ({ path: e.path, type: e.type }));
+			const totalCount = cleanResults.length;
 			const truncated = totalCount > limit;
-			const displayed = truncated ? results.slice(0, limit) : results;
+			const displayed = truncated ? cleanResults.slice(0, limit) : cleanResults;
 
 			const outputText = formatOutput(displayed, totalCount, truncated, pattern);
 			const ptcValue: FindPtcValue = {
