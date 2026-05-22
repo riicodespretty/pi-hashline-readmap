@@ -13,6 +13,8 @@ import { throwIfAborted } from "./runtime";
 
 /* ------------------------------------------------------------------ */
 /*  Prompt metadata (same as stock find.ts)                           */
+const DEFAULT_LIMIT = 1000;
+
 /* ------------------------------------------------------------------ */
 const FIND_PROMPT_METADATA = defineToolPromptMetadata({
 	promptUrl: new URL("../prompts/find.md", import.meta.url),
@@ -177,7 +179,7 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 			ctx: any,
 		) {
 			const cwd: string = ctx?.cwd ?? process.cwd();
-			const limit = params.limit ?? 1000;
+			const limit = params.limit ?? DEFAULT_LIMIT;
 			const type = params.type ?? "file";
 			const pattern = params.pattern;
 			const searchPath = params.path ? path.resolve(cwd, params.path) : cwd;
@@ -212,8 +214,11 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 			// FFF fileSearch is fuzzy by default. When regex=true, pass mode.
 			// FFF's fileSearch doesn't support mode parameter directly — it's always fuzzy.
 			// For exact/regex matching, FFF's built-in smart matching handles it.
+			const hasMetadataFilters = (params.sortBy !== undefined && params.sortBy !== "name") || params.reverse || params.modifiedSince !== undefined || params.minSize !== undefined || params.maxSize !== undefined;
 			const searchOpts: any = {
-				pageSize: limit,
+				// When metadata filters are active, fetch more candidates so filtering/sorting
+				// has enough data to work with (stock fetches all results first).
+				pageSize: hasMetadataFilters ? Math.max(limit, DEFAULT_LIMIT) : limit,
 				maxThreads: 0,
 			};
 
