@@ -9,7 +9,6 @@ import { buildGrepOutput } from "./grep-output.js";
 import { buildGrepRehydrateDescriptor } from "./context-hygiene.js";
 import { getOrGenerateMap } from "./map-cache.js";
 import { scopeGrepGroupsToSymbols } from "./grep-symbol-scope.js";
-import { resolveToCwd } from "./path-utils";
 import { formatGrepCallText, formatGrepResultText } from "./grep-render-helpers.js";
 import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
@@ -158,23 +157,20 @@ function buildGrepIRFromFffMatches(
 		const absPath = toAbsolutePath(relPath);
 		const lineNum = match.lineNumber;
 		const content = match.lineContent ?? "";
-		const isContext = match.isContext === true;
 
 		// Build hashline anchor for the match line
 		const ptc = buildPtcLine(lineNum, content);
-		const kind = isContext ? "context" : "match";
-		const marker = kind === "match" ? ">>" : "  ";
 		const renderedDisplay = escapeControlCharsForDisplay(content);
-		const renderedLine = `${relPath}:${marker}${ptc.anchor}|${renderedDisplay}`;
+		const renderedLine = `${relPath}:>>${ptc.anchor}|${renderedDisplay}`;
 
 		// Build file group
 		if (!filesMap.has(relPath)) {
 			filesMap.set(relPath, { path: absPath, matchCount: 0, lines: [] });
 		}
 		const file = filesMap.get(relPath)!;
-		if (!isContext) file.matchCount++;
+		file.matchCount++;
 		file.lines.push({
-			kind: isContext ? "context" : "match",
+			kind: "match",
 			displayPath: relPath,
 			lineNumber: lineNum,
 			text: renderedLine,
@@ -185,15 +181,13 @@ function buildGrepIRFromFffMatches(
 			line: ptc.line,
 			hash: ptc.hash,
 			anchor: ptc.anchor,
-			kind,
+			kind: "match",
 			raw: ptc.raw,
 			display: ptc.display,
 		});
 
-		if (!isContext) {
-			absoluteMatches.push({ path: absPath, line: ptc.line, hash: ptc.hash, anchor: ptc.anchor, raw: ptc.raw, display: ptc.display, kind });
-			totalMatches++;
-		}
+		absoluteMatches.push({ path: absPath, line: ptc.line, hash: ptc.hash, anchor: ptc.anchor, raw: ptc.raw, display: ptc.display, kind: "match" });
+		totalMatches++;
 
 		// Add context lines
 		if (match.contextBefore) {
@@ -329,7 +323,6 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 			}
 
 			const cwd: string = ctx?.cwd ?? process.cwd();
-			const searchPath = rawParams.path ? resolveToCwd(rawParams.path, cwd) : cwd;
 
 			const p: GrepParams = {
 				...rawParams,
@@ -338,17 +331,17 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 				scopeContext: scopeContext.value,
 			};
 
+			// Determine mode and options BEFORE building query (effectivePattern needed by buildFffQuery)
+			const mode = rawParams.literal ? "plain" as const : "regex" as const;
+			const wantIgnoreCase = rawParams.ignoreCase === true;
+			// When ignoreCase is set, lowercase the pattern so FFF's smartCase
+			// (always active) matches case-insensitively.
+			const effectivePattern = wantIgnoreCase ? rawParams.pattern.toLowerCase() : rawParams.pattern;
+
 			// Get FFF finder and run grep
 			const finder = await options.getFinder(cwd);
 			const query = buildFffQuery({ path: rawParams.path, glob: rawParams.glob, pattern: effectivePattern }, cwd);
 
-			// Determine mode and options
-			const mode = rawParams.literal ? "plain" as const : "regex" as const;
-			const wantIgnoreCase = rawParams.ignoreCase === true;
-			// When ignoreCase is set, lowercase the pattern so FFF's smartCase
-			// (always active) matches case-insensitively. This follows pi-fff's
-			// pattern: caseSensitive !== true → smartCase stays on by default.
-			const effectivePattern = wantIgnoreCase ? rawParams.pattern.toLowerCase() : rawParams.pattern;
 			const fffOpts: any = {
 				mode,
 				smartCase: true,
