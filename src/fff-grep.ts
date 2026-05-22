@@ -4,6 +4,7 @@ import { Text } from "@earendil-works/pi-tui";
 import path from "node:path";
 import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { readFile } from "node:fs/promises";
+import { normalizeToLF, stripBom } from "./edit-diff";
 import { ensureHashInit, escapeControlCharsForDisplay } from "./hashline";
 import { buildPtcError, buildPtcLine } from "./ptc-value.js";
 import { throwIfAborted } from "./runtime";
@@ -379,7 +380,9 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 				smartCase: true,
 				beforeContext: typeof p.context === "number" ? p.context : 0,
 				afterContext: typeof p.context === "number" ? p.context : 0,
-				pageSize: GREP_TRUNCATION_THRESHOLD,
+				pageSize: typeof p.limit === "number" && p.limit > 0
+				? Math.min(p.limit, GREP_TRUNCATION_THRESHOLD)
+				: GREP_TRUNCATION_THRESHOLD,
 				maxMatchesPerFile: GREP_MAX_MATCHES_PER_FILE,
 				classifyDefinitions: false,
 			};
@@ -442,7 +445,7 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 					// Read file lines for symbol boundary detection (same pattern as stock grep)
 					try {
 						const raw = await readFile(group.absolutePath, "utf8");
-						fileLinesByPath.set(group.absolutePath, raw.split("\n"));
+						fileLinesByPath.set(group.absolutePath, normalizeToLF(stripBom(raw).text).split("\n"));
 					} catch {
 						// file not readable — continue without line data
 					}
