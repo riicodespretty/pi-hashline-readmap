@@ -5,6 +5,8 @@ import { registerSgTool } from "./src/sg.js";
 import { registerNuTool } from "./src/nu.js";
 import { registerWriteTool } from "./src/write.js";
 import { registerLsTool } from "./src/ls.js";
+import { registerFffGrepTool } from "./src/fff-grep.js";
+import { registerFffFindTool } from "./src/fff-find.js";
 import { registerBashRendererTool } from "./src/bash-renderer.js";
 import { filterBashOutput } from "./src/rtk/bash-filter.js";
 import { buildRtkCompaction } from "./src/rtk/rtk-compaction.js";
@@ -192,6 +194,26 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   };
   const wasReadInSession = (absolutePath: string) => readTurns.has(absolutePath);
 
+  // ── Cross-extension protocol: accept FFF engine from pi-fff ──
+  let fffFinderGetter: ((cwd: string) => Promise<any>) | null = null;
+
+  const setFffEngine = (fffHandle: { getOrCreateFinder: (cwd: string) => Promise<any>; destroyFinder: () => void }) => {
+    fffFinderGetter = (cwd: string) => fffHandle.getOrCreateFinder(cwd);
+  };
+
+  // Set up protocol contract BEFORE anything else so pi-fff can inject
+  (globalThis as any).__piHashlineReadmapApi = { setFffEngine };
+  (globalThis as any).__piHashlineReadmap = true;
+
+  // If pi-fff was already loaded, its engine is already available
+  const existingFff = (globalThis as any).__piFff as
+    { getOrCreateFinder: (cwd: string) => Promise<any>; destroyFinder: () => void } | undefined;
+  if (existingFff) {
+    setFffEngine(existingFff);
+  }
+
+  const hasFffEngine = fffFinderGetter !== null;
+
   const readTool = registerReadTool(pi, { onSuccessfulRead: noteRead });
   const editTool = registerEditTool(pi, { wasReadInSession });
 
@@ -199,6 +221,18 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   const nuTool = registerNuTool(pi);
   const writeTool = registerWriteTool(pi, { onFileAnchored: noteRead });
   const lsTool = registerLsTool(pi);
+
+  // If FFF engine is available, register grep/find with hashline enhancements
+  // (if not available, Pi's built-in tools serve as fallback)
+  if (hasFffEngine) {
+    registerFffGrepTool(pi, {
+      getFinder: fffFinderGetter!,
+      onFileAnchored: noteRead,
+    });
+    registerFffFindTool(pi, {
+      getFinder: fffFinderGetter!,
+    });
+  }
   registerBashRendererTool(pi, { cwd: process.cwd() });
   const contextHygieneDebugTool = registerContextHygieneDebugTool(pi);
   const toolExecutors = {
