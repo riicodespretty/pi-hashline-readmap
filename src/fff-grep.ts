@@ -337,21 +337,21 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 			: GREP_PROMPT_METADATA.promptGuidelines,
 		async execute(toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: any, ctx: any) {
 			await ensureHashInit();
-  throwIfAborted(signal);
+			throwIfAborted(signal);
 			const rawParams = params as GrepParams;
 
 			// Coerce context/limit
 			const context = coerceObviousBase10Int(rawParams.context, "context");
-			if (!context.ok) return { content: [{ type: "text" as const, text: context.message }], isError: true, details: { ptcValue: buildPtcError("invalid-params-combo", context.message) } };
+			if (!context.ok) return { content: [{ type: "text" as const, text: context.message }], isError: true, details: { ptcValue: { tool: "grep", ok: false, error: buildPtcError("invalid-params-combo", context.message) } } };
 			const limit = coerceObviousBase10Int(rawParams.limit, "limit");
-			if (!limit.ok) return { content: [{ type: "text" as const, text: limit.message }], isError: true, details: { ptcValue: buildPtcError("invalid-limit", limit.message) } };
+			if (!limit.ok) return { content: [{ type: "text" as const, text: limit.message }], isError: true, details: { ptcValue: { tool: "grep", ok: false, error: buildPtcError("invalid-limit", limit.message) } } };
 			const scopeContext = coerceObviousBase10Int(rawParams.scopeContext, "scopeContext");
-			if (!scopeContext.ok) return { content: [{ type: "text" as const, text: scopeContext.message }], isError: true, details: { ptcValue: buildPtcError("invalid-params-combo", scopeContext.message) } };
+			if (!scopeContext.ok) return { content: [{ type: "text" as const, text: scopeContext.message }], isError: true, details: { ptcValue: { tool: "grep", ok: false, error: buildPtcError("invalid-params-combo", scopeContext.message) } } };
 			if (scopeContext.value !== undefined && rawParams.scope !== "symbol") {
-				return { content: [{ type: "text" as const, text: 'scopeContext requires scope: "symbol"' }], isError: true, details: { ptcValue: buildPtcError("invalid-params-combo", 'scopeContext requires scope: "symbol"') } };
+				return { content: [{ type: "text" as const, text: 'scopeContext requires scope: "symbol"' }], isError: true, details: { ptcValue: { tool: "grep", ok: false, error: buildPtcError("invalid-params-combo", 'scopeContext requires scope: "symbol"') } } };
 			}
 			if (scopeContext.value !== undefined && scopeContext.value < 0) {
-				return { content: [{ type: "text" as const, text: `Invalid scopeContext: ${scopeContext.value}` }], isError: true, details: { ptcValue: buildPtcError("invalid-params-combo", `Invalid scopeContext: ${scopeContext.value}`) } };
+				return { content: [{ type: "text" as const, text: `Invalid scopeContext: ${scopeContext.value}` }], isError: true, details: { ptcValue: { tool: "grep", ok: false, error: buildPtcError("invalid-params-combo", `Invalid scopeContext: ${scopeContext.value}`) } } };
 			}
 
 			const cwd: string = ctx?.cwd ?? process.cwd();
