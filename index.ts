@@ -1,12 +1,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerReadTool } from "./src/read.js";
 import { registerEditTool } from "./src/edit.js";
-import { registerGrepTool } from "./src/grep.js";
 import { registerSgTool, isSgAvailable } from "./src/sg.js";
 import { registerNuTool } from "./src/nu.js";
 import { registerWriteTool } from "./src/write.js";
 import { registerLsTool } from "./src/ls.js";
+import { registerGrepTool } from "./src/grep.js";
+import { registerFffGrepTool } from "./src/fff-grep.js";
 import { registerFindTool } from "./src/find.js";
+import { registerFffFindTool } from "./src/fff-find.js";
 import { registerBashRendererTool } from "./src/bash-renderer.js";
 import { filterBashOutput } from "./src/rtk/bash-filter.js";
 import { buildRtkCompaction } from "./src/rtk/rtk-compaction.js";
@@ -194,19 +196,55 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   };
   const wasReadInSession = (absolutePath: string) => readTurns.has(absolutePath);
 
+  // ── Cross-extension protocol: accept FFF engine from pi-fff ──
+  let fffFinderGetter: ((cwd: string) => Promise<any>) | null = null;
+
+  const setFffEngine = (fffHandle: { getOrCreateFinder: (cwd: string) => Promise<any>; destroyFinder: () => void }) => {
+    fffFinderGetter = (cwd: string) => fffHandle.getOrCreateFinder(cwd);
+  };
+
+  // Set up protocol contract BEFORE anything else so pi-fff can inject
+  (globalThis as any).__piHashlineReadmapApi = { setFffEngine };
+  (globalThis as any).__piHashlineReadmap = true;
+
+  // If pi-fff was already loaded, its engine is already available
+  const existingFff = (globalThis as any).__piFff as
+    { getOrCreateFinder: (cwd: string) => Promise<any>; destroyFinder: () => void } | undefined;
+  if (existingFff) {
+    setFffEngine(existingFff);
+  }
+
+  const hasFffEngine = fffFinderGetter !== null;
+
   const readTool = registerReadTool(pi, { onSuccessfulRead: noteRead });
   const editTool = registerEditTool(pi, { wasReadInSession });
+
   const sgAvailable = isSgAvailable();
   const astSearchGuideline = sgAvailable
     ? "Use grep summary for counts; use ast_search for structural code patterns."
     : "Use grep summary for counts; install ast-grep to enable ast_search.";
 
-  const grepTool = registerGrepTool(pi, { astSearchGuideline, onFileAnchored: noteRead });
   const sgTool = registerSgTool(pi, { onFileAnchored: noteRead });
   const nuTool = registerNuTool(pi);
   const writeTool = registerWriteTool(pi, { onFileAnchored: noteRead });
   const lsTool = registerLsTool(pi);
-  const findTool = registerFindTool(pi);
+
+  // Register grep/find: FFF-backed when engine is available, traditional otherwise
+  let grepTool: any, findTool: any;
+  if (hasFffEngine) {
+    grepTool = registerFffGrepTool(pi, {
+      getFinder: fffFinderGetter!,
+      onFileAnchored: noteRead,
+      astSearchGuideline,
+    });
+    findTool = registerFffFindTool(pi, {
+      getFinder: fffFinderGetter!,
+    });
+  } else {
+    grepTool = registerGrepTool(pi, { astSearchGuideline, onFileAnchored: noteRead });
+    findTool = registerFindTool(pi);
+  }
+
   registerBashRendererTool(pi, { cwd: process.cwd() });
   const contextHygieneDebugTool = registerContextHygieneDebugTool(pi);
   const toolExecutors = {
