@@ -379,7 +379,7 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 				smartCase: true,
 				beforeContext: typeof p.context === "number" ? p.context : 0,
 				afterContext: typeof p.context === "number" ? p.context : 0,
-				pageSize: typeof p.limit === "number" && p.limit > 0 ? p.limit : 100,
+				pageSize: GREP_TRUNCATION_THRESHOLD,
 				maxMatchesPerFile: GREP_MAX_MATCHES_PER_FILE,
 				classifyDefinitions: false,
 			};
