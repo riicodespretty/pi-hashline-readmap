@@ -3,14 +3,13 @@ import { Type } from "@sinclair/typebox";
 import { Text } from "@earendil-works/pi-tui";
 import path from "node:path";
 import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
-import { ensureHashInit, formatHashlineDisplay, escapeControlCharsForDisplay } from "./hashline";
+import { ensureHashInit, escapeControlCharsForDisplay } from "./hashline";
 import { buildPtcError, buildPtcLine } from "./ptc-value.js";
 import { buildGrepOutput } from "./grep-output.js";
 import { buildGrepRehydrateDescriptor } from "./context-hygiene.js";
 import { getOrGenerateMap } from "./map-cache.js";
 import { scopeGrepGroupsToSymbols } from "./grep-symbol-scope.js";
 import { resolveToCwd } from "./path-utils";
-import { throwIfAborted } from "./runtime";
 import { formatGrepCallText, formatGrepResultText } from "./grep-render-helpers.js";
 import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
@@ -341,13 +340,18 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 
 			// Get FFF finder and run grep
 			const finder = await options.getFinder(cwd);
-			const query = buildFffQuery({ path: rawParams.path, glob: rawParams.glob, pattern: rawParams.pattern }, cwd);
+			const query = buildFffQuery({ path: rawParams.path, glob: rawParams.glob, pattern: effectivePattern }, cwd);
 
 			// Determine mode and options
 			const mode = rawParams.literal ? "plain" as const : "regex" as const;
+			const wantIgnoreCase = rawParams.ignoreCase === true;
+			// When ignoreCase is set, lowercase the pattern so FFF's smartCase
+			// (always active) matches case-insensitively. This follows pi-fff's
+			// pattern: caseSensitive !== true → smartCase stays on by default.
+			const effectivePattern = wantIgnoreCase ? rawParams.pattern.toLowerCase() : rawParams.pattern;
 			const fffOpts: any = {
 				mode,
-				smartCase: !rawParams.ignoreCase,
+				smartCase: true,
 				beforeContext: typeof p.context === "number" ? p.context : 0,
 				afterContext: typeof p.context === "number" ? p.context : 0,
 				pageSize: typeof p.limit === "number" && p.limit > 0 ? p.limit : 100,

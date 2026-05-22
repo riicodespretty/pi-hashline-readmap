@@ -167,41 +167,39 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 			};
 
 			let results: any[];
-			if (type === "dir") {
-				const dirResult = finder.directorySearch(query, searchOpts);
-				results = dirResult.ok ? dirResult.value.items.map((i: any) => ({ path: i.relativePath, type: "dir" as const })) : [];
-			} else {
-				const fileResult = params.regex
-					? finder.grep(query, { mode: "regex", pageSize: limit, maxMatchesPerFile: 1 })
-					: finder.fileSearch(query, searchOpts);
-
-				if (fileResult.ok) {
-					if (params.regex) {
-						// grep returns matches, not files; deduplicate
-						const seen = new Set<string>();
-						results = [];
-						for (const item of fileResult.value.items ?? []) {
-							if (!seen.has(item.relativePath)) {
-								seen.add(item.relativePath);
-								results.push({ path: item.relativePath, type: "file" as const });
-							}
-						}
-					} else {
-						results = fileResult.value.items.map((i: any) => ({ path: i.relativePath, type: "file" as const }));
-					}
-				} else {
-					results = [];
-				}
-			}
 
 			if (type === "any") {
-				// Mixed search: combine file and dir results
+				// Mixed search: files + directories interleaved by score
 				const mixedResult = finder.mixedSearch(query, searchOpts);
 				if (mixedResult.ok) {
 					results = mixedResult.value.items.map((i: any) => ({
-						path: i.type === "file" ? i.item.relativePath : i.item.relativePath,
+						path: i.item.relativePath,
 						type: i.type === "file" ? "file" as const : "dir" as const,
 					}));
+				} else {
+					results = [];
+				}
+			} else if (type === "dir") {
+				const dirResult = finder.directorySearch(query, searchOpts);
+				results = dirResult.ok ? dirResult.value.items.map((i: any) => ({ path: i.relativePath, type: "dir" as const })) : [];
+			} else {
+				// file search — use fileSearch for fuzzy/glob, filter with regex if needed
+				const fileResult = finder.fileSearch(query, searchOpts);
+				if (fileResult.ok) {
+					let items = fileResult.value.items as any[];
+					if (params.regex) {
+						// When regex is set, filter the fuzzy results against the basename
+						let re: RegExp;
+						try {
+							re = new RegExp(pattern);
+						} catch {
+							return { content: [{ type: "text" as const, text: `Error: invalid regex '${pattern}'` }], isError: true, details: { ptcValue: { tool: "find" as const, ok: false, path: params.path ?? cwd, error: buildPtcError("invalid-params-combo", `invalid regex '${pattern}'`) } } };
+						}
+						items = items.filter((i: any) => re.test(i.fileName));
+					}
+					results = items.map((i: any) => ({ path: i.relativePath, type: "file" as const }));
+				} else {
+					results = [];
 				}
 			}
 
