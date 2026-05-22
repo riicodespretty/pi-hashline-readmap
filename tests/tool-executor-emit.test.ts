@@ -12,13 +12,13 @@ describe("index.ts emits and stashes tool executors (task 2)", () => {
     delete (globalThis as any).__hashlineToolExecutors;
   });
 
-  it("stashes executor keys on globalThis", async () => {
+  it("stashes ls and find alongside the existing executor keys", async () => {
     const pi = createMockPi();
     const { default: init } = await import("../index.js");
     init(pi as any);
     const stash = (globalThis as any).__hashlineToolExecutors;
     expect(stash).toBeDefined();
-    for (const key of ["ast_search", "edit", "ls", "read", "write"]) {
+    for (const key of ["ast_search", "edit", "find", "grep", "ls", "read", "write"]) {
       expect(stash[key]).toBeDefined();
     }
   });

@@ -23,6 +23,36 @@ function getTextContent(result: any): string {
 }
 
 describe("repro 109 — anchor contract", () => {
+  it("allows grep anchors to be edited without an intermediate read", async () => {
+    const tools = captureTools();
+    const dir = mkdtempSync(join(tmpdir(), "pi-repro-109-grep-"));
+    const filePath = resolve(dir, "sample.ts");
+    await writeFile(filePath, "const value = 1;\nconst other = 2;\n", "utf8");
+
+    const grepResult = await tools.grep.execute(
+      "grep-call",
+      { pattern: "value", path: filePath, literal: true },
+      new AbortController().signal,
+      () => {},
+      { cwd: process.cwd() },
+    );
+    const grepText = getTextContent(grepResult);
+    const anchor = grepText.match(/:(?:>>|  )(\d+:[0-9a-f]{3})\|/)?.[1];
+    expect(anchor).toBeDefined();
+
+    const editResult = await tools.edit.execute(
+      "edit-call",
+      { path: filePath, edits: [{ set_line: { anchor, new_text: "const value = 2;" } }] },
+      new AbortController().signal,
+      () => {},
+      { cwd: process.cwd() },
+    );
+
+    expect(editResult.isError).toBeFalsy();
+    expect(readFileSync(filePath, "utf8")).toContain("const value = 2;");
+
+    await rm(dir, { recursive: true, force: true });
+  });
 
   it("allows ast_search anchors to be edited without an intermediate read", async () => {
     const tools = captureTools();
