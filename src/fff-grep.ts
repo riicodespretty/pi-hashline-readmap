@@ -389,7 +389,7 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 
 			const result = finder.grep(query, fffOpts);
 			if (!result.ok) {
-				return { content: [{ type: "text" as const, text: `Grep error: ${result.error}` }], isError: true, details: { ptcValue: { tool: "grep" as const, ok: false, error: buildPtcError("fff-error", result.error) } } };
+				return { content: [{ type: "text" as const, text: `Grep error: ${result.error}` }], isError: true, details: { ptcValue: { tool: "grep" as const, ok: false, error: buildPtcError("fff-error", result.error), summary: false, totalMatches: 0, records: [] } } };
 			}
 			const grepResult = result.value;
 			if (!grepResult.items?.length) {
@@ -426,6 +426,9 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 				absolutePath: summary ? file.path : toAbsolutePath(file.path),
 				matchCount: file.matchCount,
 				entries: file.lines.map((line) => {
+					if (line.kind === "separator") {
+						return { kind: "separator" as const, text: line.text };
+					}
 					const record = recordsMap.get(line.text);
 					if (!record) throw new Error(`Missing grep record for rendered line: ${line.text}`);
 					return { kind: record.kind, line: { line: record.line, hash: record.hash, anchor: record.anchor, raw: record.raw, display: record.display } };
