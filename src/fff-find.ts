@@ -234,6 +234,14 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 				}
 			}
 
+			// Filter by maxDepth if specified (stock find behavior)
+			if (maxDepthCoerced.value !== undefined && maxDepthCoerced.value >= 0) {
+				results = results.filter((e) => {
+					const depth = e.path.replace(/\/$/, "").split("/").length;
+					return depth <= maxDepthCoerced.value!;
+				});
+			}
+
 			const totalCount = results.length;
 			const truncated = totalCount > limit;
 			const displayed = truncated ? results.slice(0, limit) : results;
