@@ -2,10 +2,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import path from "node:path";
+import { stat } from "node:fs/promises";
+import { Buffer } from "node:buffer";
 import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
 import { buildPtcError } from "./ptc-value.js";
 import { coerceObviousBase10Int } from "./coerce-obvious-int.js";
 import { clampLineToWidth, clampLinesToWidth, isRendererExpanded, renderToolLabel, summaryLine } from "./tui-render-utils.js";
+import { throwIfAborted } from "./runtime";
 
 /* ------------------------------------------------------------------ */
 /*  Prompt metadata (same as stock find.ts)                           */
@@ -88,14 +91,24 @@ function buildFffFindQuery(params: { path?: string; pattern: string }, cwd: stri
 /*  Output formatting (mirrors stock find.ts's format style)          */
 /* ------------------------------------------------------------------ */
 function formatOutput(entries: FindEntry[], totalCount: number, truncated: boolean, pattern: string): string {
+	if (entries.length === 0 && !truncated) {
+		return `No files found matching pattern: ${pattern}`;
+	}
 	const lines: string[] = [];
 	for (const entry of entries) {
-		lines.push(entry.path);
+		lines.push(entry.type === "dir" ? `${entry.path}/` : entry.path);
 	}
-	const header = truncated
-		? `[Found ${totalCount} matches, showing first ${entries.length}]`
-		: `[Found ${totalCount} matches]`;
-	return `${header}\n${lines.join("\n")}`;
+	if (truncated) {
+		const remaining = totalCount - entries.length;
+		lines.push(`[… ${remaining} more entries — refine pattern or increase limit]`);
+	}
+	let text = lines.join("\n");
+	const bytes = Buffer.byteLength(text, "utf8");
+	const MAX_BYTES = 50 * 1024; // 50 KB
+	if (bytes > MAX_BYTES) {
+		text = Buffer.from(text, "utf8").subarray(0, MAX_BYTES).toString("utf8") + "\n[… truncated at 50 KB]";
+	}
+	return text;
 }
 
 /* ------------------------------------------------------------------ */
@@ -145,6 +158,22 @@ export function registerFffFindTool(pi: ExtensionAPI, options: FffFindToolOption
 			const limit = params.limit ?? 1000;
 			const type = params.type ?? "file";
 			const pattern = params.pattern;
+			const searchPath = params.path ? path.resolve(cwd, params.path) : cwd;
+
+			// Path validation — check directory exists (same as stock find)
+			throwIfAborted(_signal);
+			try {
+				const searchStat = await stat(searchPath);
+				if (!searchStat.isDirectory()) {
+					const msg = `Error: '${params.path ?? searchPath}' is not a directory`;
+					return { content: [{ type: "text" as const, text: msg }], isError: true, details: { ptcValue: { tool: "find" as const, ok: false, path: params.path ?? searchPath, error: buildPtcError("path-not-directory", msg, `Use ls on a directory, or read(${JSON.stringify(params.path ?? searchPath)}) for a single file.`) } } };
+				}
+			} catch (err: any) {
+				const target = params.path ?? searchPath;
+				const code = err?.code === "EACCES" || err?.code === "EPERM" ? "permission-denied" : err?.code === "ENOENT" ? "path-not-found" : "fs-error";
+				const msg = code === "permission-denied" ? `Error: permission denied for path '${target}'` : code === "path-not-found" ? `Error: path '${target}' does not exist` : `Error: could not access path '${target}': ${err?.message ?? String(err)}`;
+				return { content: [{ type: "text" as const, text: msg }], isError: true, details: { ptcValue: { tool: "find" as const, ok: false, path: target, error: buildPtcError(code, msg, undefined, code === "fs-error" ? { fsCode: err?.code, fsMessage: err?.message } : undefined) } } };
+			}
 
 			const maxDepthCoerced = coerceObviousBase10Int(params.maxDepth, "maxDepth");
 			if (!maxDepthCoerced.ok) {

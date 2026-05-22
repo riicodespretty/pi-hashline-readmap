@@ -3,8 +3,10 @@ import { Type } from "@sinclair/typebox";
 import { Text } from "@earendil-works/pi-tui";
 import path from "node:path";
 import { defineToolPromptMetadata } from "./tool-prompt-metadata.js";
+import { readFile } from "node:fs/promises";
 import { ensureHashInit, escapeControlCharsForDisplay } from "./hashline";
 import { buildPtcError, buildPtcLine } from "./ptc-value.js";
+import { throwIfAborted } from "./runtime";
 import { buildGrepOutput } from "./grep-output.js";
 import { buildGrepRehydrateDescriptor } from "./context-hygiene.js";
 import { getOrGenerateMap } from "./map-cache.js";
@@ -248,37 +250,66 @@ function buildGrepIRFromFffMatches(
 /* ------------------------------------------------------------------ */
 /*  Deduplicate adjacent context lines                                */
 /* ------------------------------------------------------------------ */
+const LINE_NUM_RE = /(?:>>|  )(\d+):/;
+
 function deduplicateContext(lines: GrepOutputLine[]): GrepOutputLine[] {
-	if (lines.length < 2) return lines;
-	const seen = new Set<string>();
-	const out: GrepOutputLine[] = [];
+	if (lines.length === 0) return lines;
+	const byLineNum = new Map<number, GrepOutputLine>();
 	for (const line of lines) {
-		const key = `${line.kind}:${line.lineNumber}`;
-		if (seen.has(key)) continue;
-		seen.add(key);
-		out.push(line);
+		const match = line.text.match(LINE_NUM_RE);
+		if (!match) continue;
+		const lineNum = Number.parseInt(match[1], 10);
+		const existing = byLineNum.get(lineNum);
+		if (!existing || (line.kind === "match" && existing.kind === "context")) {
+			byLineNum.set(lineNum, line);
+		}
 	}
-	return out;
+	const sorted = [...byLineNum.entries()].sort(([a], [b]) => a - b);
+	const result: GrepOutputLine[] = [];
+	for (let i = 0; i < sorted.length; i++) {
+		if (i > 0 && sorted[i][0] > sorted[i - 1][0] + 1) {
+			result.push({ kind: "separator", displayPath: "", lineNumber: 0, text: "--" });
+		}
+		result.push(sorted[i][1]);
+	}
+	return result;
 }
 
 /* ------------------------------------------------------------------ */
 /*  Truncation — same thresholds as stock grep.ts                     */
 /* ------------------------------------------------------------------ */
-const GREP_TRUNCATION_THRESHOLD = 500;
-const GREP_MAX_MATCHES_PER_FILE = 100;
+const GREP_TRUNCATION_THRESHOLD = 50;
+const GREP_MAX_MATCHES_PER_FILE = 10;
 
 function truncateGrepIR(ir: GrepOutputIR): GrepOutputIR {
 	if (ir.totalMatches <= GREP_TRUNCATION_THRESHOLD) return ir;
-	let running = 0;
-	const truncated: GrepOutputFile[] = [];
-	for (const file of ir.files) {
-		if (running >= GREP_TRUNCATION_THRESHOLD) break;
-		const keep = Math.min(file.matchCount, GREP_MAX_MATCHES_PER_FILE);
-		const adjusted = Math.min(keep, GREP_TRUNCATION_THRESHOLD - running);
-		truncated.push({ ...file, matchCount: adjusted, lines: file.lines });
-		running += adjusted;
-	}
-	return { totalMatches: ir.totalMatches, files: truncated };
+	const files = ir.files.map((file) => {
+		let matchesSeen = 0;
+		const keptLines: GrepOutputLine[] = [];
+		let truncatedCount = 0;
+		for (const line of file.lines) {
+			if (line.kind === "match") {
+				matchesSeen++;
+				if (matchesSeen <= GREP_MAX_MATCHES_PER_FILE) {
+					keptLines.push(line);
+				} else {
+					truncatedCount++;
+				}
+			} else if (matchesSeen <= GREP_MAX_MATCHES_PER_FILE) {
+				keptLines.push(line);
+			}
+		}
+		if (truncatedCount > 0) {
+			keptLines.push({
+				kind: "separator",
+				displayPath: "",
+				lineNumber: 0,
+				text: `... +${truncatedCount} more matches`,
+			});
+		}
+		return { ...file, matchCount: matchesSeen, lines: keptLines };
+	});
+	return { totalMatches: ir.totalMatches, files };
 }
 
 /* ------------------------------------------------------------------ */
@@ -306,6 +337,7 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 			: GREP_PROMPT_METADATA.promptGuidelines,
 		async execute(toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: any, ctx: any) {
 			await ensureHashInit();
+  throwIfAborted(signal);
 			const rawParams = params as GrepParams;
 
 			// Coerce context/limit
@@ -355,7 +387,7 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 			const result = finder.grep(query, fffOpts);
 			const grepResult = result.ok ? result.value : null;
 			if (!grepResult || !grepResult.items?.length) {
-				const empty = { content: [{ type: "text" as const, text: "" }], details: { ptcValue: { tool: "grep", summary: !!p.summary, totalMatches: 0, records: [] } } };
+				const empty = { content: [{ type: "text" as const, text: "" }], details: { ptcValue: { tool: "grep", ok: true, summary: !!p.summary, totalMatches: 0, records: [] } } };
 				return empty;
 			}
 
@@ -384,7 +416,7 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 				? { ...truncatedIR, files: truncatedIR.files.map((f) => ({ ...f, path: toAbsolutePath(f.path) })) }
 				: truncatedIR;
 
-			let renderedGroups = outputIR.files.map((file) => ({
+			let renderedGroups: any[] = outputIR.files.map((file) => ({
 				displayPath: file.path,
 				absolutePath: summary ? file.path : toAbsolutePath(file.path),
 				matchCount: file.matchCount,
@@ -395,14 +427,23 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 				}),
 			}));
 
-			let ptcRecords = absoluteMatches;
+			let ptcRecords: any[] = absoluteMatches;
 			let scopeWarnings: any[] = [];
 
 			if (p.scope === "symbol" && !summary) {
+				throwIfAborted(signal);
 				const fileLinesByPath = new Map<string, string[]>();
 				const fileMapsByPath = new Map<string, any>();
 				for (const group of renderedGroups) {
+					throwIfAborted(signal);
 					fileMapsByPath.set(group.absolutePath, await getOrGenerateMap(group.absolutePath));
+					// Read file lines for symbol boundary detection (same pattern as stock grep)
+					try {
+						const raw = await readFile(group.absolutePath, "utf8");
+						fileLinesByPath.set(group.absolutePath, raw.split("\n"));
+					} catch {
+						// file not readable — continue without line data
+					}
 				}
 				const scoped = scopeGrepGroupsToSymbols({
 					groups: renderedGroups,
