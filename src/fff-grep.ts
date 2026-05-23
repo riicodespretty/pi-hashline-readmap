@@ -132,8 +132,14 @@ function normalizePathConstraint(pc: string, cwd: string): string | null {
 function buildFffQuery(params: { path?: string; glob?: string; pattern: string }, cwd: string): string {
 	const parts: string[] = [];
 	if (params.path) {
-		const constraint = normalizePathConstraint(params.path, cwd);
-		if (constraint) parts.push(constraint);
+		// Absolute paths are passed through — FFF's parser handles them.
+		// For relative paths, normalize to match FFF's constraint syntax.
+		if (path.isAbsolute(params.path)) {
+			parts.push(params.path);
+		} else {
+			const constraint = normalizePathConstraint(params.path, cwd);
+			if (constraint) parts.push(constraint);
+		}
 	}
 	if (params.glob) {
 		parts.push(params.glob);
@@ -314,6 +320,68 @@ function truncateGrepIR(ir: GrepOutputIR): GrepOutputIR {
 }
 
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/*  Direct file search for absolute paths outside FFF index           */
+/* ------------------------------------------------------------------ */
+async function searchFileDirect(
+	params: { pattern: string; path?: string; literal?: boolean; ignoreCase?: boolean; context?: number | string; limit?: number | string; summary?: boolean; scope?: string; scopeContext?: number | string },
+	cwd: string,
+	signal: AbortSignal | undefined,
+): Promise<{ content: { type: "text"; text: string }[]; details: { ptcValue: any } }> {
+	const { readFile: fsReadFile } = await import("node:fs/promises");
+	throwIfAborted(signal);
+
+	let raw: string;
+	try {
+		raw = await fsReadFile(params.path!, "utf-8");
+	} catch {
+		return { content: [{ type: "text", text: "" }], details: { ptcValue: { tool: "grep", ok: true, summary: !!params.summary, totalMatches: 0, records: [] } } };
+	}
+	throwIfAborted(signal);
+
+	const lines = raw.split("\n");
+	const pattern = params.pattern;
+	let re: RegExp;
+	try {
+		const flags = params.ignoreCase ? "gi" : "g";
+		re = params.literal ? new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), flags) : new RegExp(pattern, flags);
+	} catch {
+		return { content: [{ type: "text", text: "" }], details: { ptcValue: { tool: "grep", ok: true, summary: !!params.summary, totalMatches: 0, records: [] } } };
+	}
+
+	const relPath = path.relative(cwd, params.path!) || params.path!;
+	const absPath = params.path!;
+	const matchLines: Array<{ line: number; text: string }> = [];
+	for (let i = 0; i < lines.length; i++) {
+		throwIfAborted(signal);
+		if (re.test(lines[i])) {
+			matchLines.push({ line: i + 1, text: lines[i] });
+		}
+	}
+
+	const records: any[] = [];
+	const renderedLines: string[] = [];
+	for (const m of matchLines) {
+		const built = buildPtcLine(m.line, m.text);
+		const rendered = `${relPath}:>>${built.anchor}|${escapeControlCharsForDisplay(m.text)}`;
+		renderedLines.push(rendered);
+		records.push({ path: absPath, line: built.line, hash: built.hash, anchor: built.anchor, kind: "match", raw: built.raw, display: built.display });
+	}
+
+	return {
+		content: [{ type: "text" as const, text: renderedLines.join("\n") }],
+		details: {
+			ptcValue: {
+				tool: "grep",
+				ok: true,
+				summary: !!params.summary,
+				totalMatches: matchLines.length,
+				records,
+			},
+		},
+	};
+}
 /*  Registration                                                      */
 /* ------------------------------------------------------------------ */
 export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOptions) {
@@ -356,6 +424,28 @@ export function registerFffGrepTool(pi: ExtensionAPI, options: FffGrepToolOption
 			}
 
 			const cwd: string = ctx?.cwd ?? process.cwd();
+
+			// Handle absolute paths: convert to relative for FFF if inside workspace,
+			// otherwise fall back to direct file read + regex search.
+			if (rawParams.path && path.isAbsolute(rawParams.path)) {
+				const rel = path.relative(cwd, rawParams.path);
+				if (!rel.startsWith("..")) {
+					// Inside workspace — use relative path for FFF
+					rawParams = { ...rawParams, path: rel };
+				} else {
+					// Outside workspace — read file directly
+					const directResult = await searchFileDirect(rawParams, cwd, signal);
+					// Notify onFileAnchored so context hygiene works
+					if (!rawParams.summary && options.onFileAnchored) {
+						const p = directResult.details?.ptcValue as any;
+						if (p?.records?.length) {
+							const anchoredPaths = new Set(p.records.map((r: any) => r.path));
+							for (const abs of anchoredPaths) options.onFileAnchored(abs);
+						}
+					}
+					return directResult;
+				}
+			}
 
 			const p: GrepParams = {
 				...rawParams,

@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { FileFinder as FffFileFinder } from "@ff-labs/fff-node";
 import { registerReadTool } from "./src/read.js";
 import { registerEditTool } from "./src/edit.js";
 import { registerSgTool, isSgAvailable } from "./src/sg.js";
@@ -196,23 +197,13 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   };
   const wasReadInSession = (absolutePath: string) => readTurns.has(absolutePath);
 
-  // ── FFF engine detection via direct dependency ──
-  // @ff-labs/fff-node is a file: dependency pointing to pi-fff's fff-node
-  // package. When pi-fff is installed, this resolves and provides the FFF
-  // engine. Using sync require() (jiti provides it) to keep factory synchronous.
-  let fffFinderGetter: ((cwd: string) => Promise<any>) | null = null;
-  try {
-    const { FileFinder } = require("@ff-labs/fff-node");
-    if (FileFinder) {
-      fffFinderGetter = async (cwd: string) => {
-        const result = FileFinder.create({ basePath: cwd });
-        if (!result.ok) throw new Error(result.error);
-        return result.value;
-      };
-    }
-  } catch {
-    // @ff-labs/fff-node not available — FFF not installed
-  }
+  // ── FFF engine via @ff-labs/fff-node ──
+  // FileFinder is always available as a direct npm dependency.
+  const fffFinderGetter = async (cwd: string) => {
+    const result = FffFileFinder.create({ basePath: cwd });
+    if (!result.ok) throw new Error(result.error);
+    return result.value;
+  };
 
   const hasFffEngine = fffFinderGetter !== null;
 

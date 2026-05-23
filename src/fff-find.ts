@@ -83,8 +83,12 @@ function normalizePathConstraint(pc: string, cwd: string): string | null {
 function buildFffFindQuery(params: { path?: string; pattern: string }, cwd: string): string {
 	const parts: string[] = [];
 	if (params.path) {
-		const constraint = normalizePathConstraint(params.path, cwd);
-		if (constraint) parts.push(constraint);
+		if (path.isAbsolute(params.path)) {
+			parts.push(params.path);
+		} else {
+			const constraint = normalizePathConstraint(params.path, cwd);
+			if (constraint) parts.push(constraint);
+		}
 	}
 	parts.push(params.pattern);
 	return parts.join(" ");
