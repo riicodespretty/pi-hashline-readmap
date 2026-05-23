@@ -196,26 +196,22 @@ export default function piHashlineReadmapExtension(pi: ExtensionAPI): void {
   };
   const wasReadInSession = (absolutePath: string) => readTurns.has(absolutePath);
 
-  // ── Cross-extension protocol: accept FFF engine from pi-fff ──
+  // ── FFF engine detection via direct dependency ──
+  // @ff-labs/fff-node is a file: dependency pointing to pi-fff's fff-node
+  // package. When pi-fff is installed, this resolves and provides the FFF
+  // engine. Using sync require() (jiti provides it) to keep factory synchronous.
   let fffFinderGetter: ((cwd: string) => Promise<any>) | null = null;
-
-  const setFffEngine = (fffHandle: { getOrCreateFinder: (cwd: string) => Promise<any>; destroyFinder: () => void }) => {
-    fffFinderGetter = (cwd: string) => fffHandle.getOrCreateFinder(cwd);
-  };
-
-  // Set up protocol contract BEFORE anything else so pi-fff can inject
-  (globalThis as any).__piHashlineReadmapApi = { setFffEngine };
-  (globalThis as any).__piHashlineReadmap = true;
-
-  // Primary: pi.events — subscribe to fff:engine-ready and signal we're ready
-  pi.events.on("fff:engine-ready", (handle: any) => setFffEngine(handle));
-  pi.events.emit("hashline:ready");
-
-  // Fallback: globalThis check for already-loaded pi-fff
-  const existingFff = (globalThis as any).__piFff as
-    { getOrCreateFinder: (cwd: string) => Promise<any>; destroyFinder: () => void } | undefined;
-  if (existingFff && !fffFinderGetter) {
-    setFffEngine(existingFff);
+  try {
+    const { FileFinder } = require("@ff-labs/fff-node");
+    if (FileFinder) {
+      fffFinderGetter = async (cwd: string) => {
+        const result = FileFinder.create({ basePath: cwd });
+        if (!result.ok) throw new Error(result.error);
+        return result.value;
+      };
+    }
+  } catch {
+    // @ff-labs/fff-node not available — FFF not installed
   }
 
   const hasFffEngine = fffFinderGetter !== null;

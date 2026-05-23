@@ -48,7 +48,9 @@
     "tree-sitter-wasms": "0.1.13",
     "ts-morph": "^27.0.2",
     "web-tree-sitter": "0.25.10",
-    "xxhash-wasm": "^1.1.0"
+
+	"@ff-labs/fff-node": "file:../fff/packages/fff-node",
+	"xxhash-wasm": "^1.1.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
